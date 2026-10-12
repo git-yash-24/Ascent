@@ -131,6 +131,27 @@ await test('X17: every control has an accessible name; state is not colour alone
   assert(shape === 1, 'fulfilled glyph has no tick shape');
 });
 
+await test('water: built in, one tap a glass, never moves the story', async (page) => {
+  await start(page);
+  await page.getByRole('heading', { name: 'Water' }).waitFor();
+  await page.getByRole('button', { name: /Add a glass of water/ }).tap();
+  await page.getByRole('button', { name: /Add a glass of water/ }).tap();
+  assert((await page.locator('.water .val').textContent()) === '2 / 8 glasses', 'glasses not counted');
+  assert((await page.locator('.water .cell.on').count()) === 2, 'bar not filled');
+  assert((await page.locator('.water-line').textContent()).startsWith('Last glass'), 'no last-glass line');
+  // Water alone does not start the story.
+  assert((await page.locator('.stat .num').first().textContent()) === '0', 'water advanced the story');
+  await page.getByRole('button', { name: 'Remove a glass' }).tap();
+  assert((await page.locator('.water .val').textContent()) === '1 / 8 glasses', 'remove did not work');
+  // Water is not in the habit list or the editable habits.
+  assert((await page.locator('.habits .habit', { hasText: 'Water' }).count()) === 0, 'water listed as a habit');
+  await page.getByRole('link', { name: 'Setup' }).tap();
+  await page.locator('#water-target').fill('10');
+  await page.getByRole('button', { name: 'Save', exact: true }).tap();
+  await page.getByRole('link', { name: 'Back to today' }).tap();
+  assert((await page.locator('.water .val').textContent()) === '1 / 10 glasses', 'water goal not applied');
+});
+
 await test('reload keeps the record, and the chosen day', async (page) => {
   await start(page);
   await page.getByRole('checkbox', { name: /Review mistakes/ }).tap();
@@ -158,16 +179,17 @@ await test('Setup: add, edit, archive, restore, correct the record', async (page
   await page.getByRole('link', { name: 'Setup' }).tap();
   await page.locator('details.add > summary').tap();
   const form = page.locator('details.add fieldset');
-  await form.getByLabel('Name').fill('Anki');
-  await form.getByLabel('Kind').selectOption('numeric');
-  await form.getByLabel('Daily target').fill('100');
-  await form.getByLabel('Unit').fill('cards');
-  await form.getByLabel('When').selectOption('perWeek');
-  await form.getByLabel('Times').fill('5');
+  await form.getByLabel('What will you do?').fill('Anki');
+  await form.getByLabel('A number').check();
+  await form.getByLabel('How many each day?').fill('100');
+  await form.getByLabel('Of what?').fill('cards');
+  await form.getByLabel('Times a week').check();
+  await form.getByLabel('How many times?').fill('5');
+  await form.getByLabel('At a set time? (optional)').fill('07:30');
   await page.getByRole('button', { name: 'Add habit' }).tap();
   await page.getByRole('button', { name: 'Edit Anki' }).waitFor();
   await page.getByRole('button', { name: 'Edit Anki' }).tap();
-  await page.locator('.setup-habit fieldset').getByLabel('Daily target').fill('120');
+  await page.locator('.setup-habit fieldset').getByLabel('How many each day?').fill('120');
   await page.getByRole('button', { name: 'Save changes' }).tap();
   assert((await page.locator('.setup-habit', { hasText: 'Anki' }).textContent()).includes('120 cards · 5 times a week'), 'edit not shown');
   await page.getByRole('button', { name: 'Archive Anki' }).tap();
@@ -180,7 +202,10 @@ await test('Setup: add, edit, archive, restore, correct the record', async (page
   await page.getByRole('button', { name: 'Correct the record' }).tap();
   assert((await page.locator('.toast').textContent()).includes('not started'), 'future correction not refused');
   await page.getByRole('link', { name: 'Back to today' }).tap();
-  assert((await page.locator('.habit', { hasText: 'Anki' }).textContent()).includes('0 of 5 this week'), 'quota line missing');
+  const anki = await page.locator('.habit', { hasText: 'Anki' }).textContent();
+  assert(anki.includes('0 of 5 this week') && anki.includes('at 7:30 am'), `quota or time line missing: ${anki}`);
+  // Timed habits come first.
+  assert((await page.locator('.habits .habit .name').first().textContent()) === 'Anki', 'timed habit not first');
 });
 
 await test('phone width: nothing scrolls sideways', async (page) => {

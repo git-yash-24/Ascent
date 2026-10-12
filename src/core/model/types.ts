@@ -17,6 +17,7 @@ export type Schedule =
 
 export type HabitType = 'binary' | 'numeric' | 'duration' | 'avoid';
 
+/** Which of Ari's chores a habit becomes. Chosen by the story, never by the person. */
 export type HabitCategory =
   | 'prepare'
   | 'test'
@@ -45,6 +46,8 @@ export interface HabitVersion {
    * Archive and restore are versions, so past days stay judged by what was in force (I3).
    */
   archived?: true;
+  /** Optional set time, 'HH:MM' local (Time-bound in SMART). Orders the checklist and reminders. */
+  time?: string;
 }
 
 export interface Habit {
@@ -54,6 +57,11 @@ export interface Habit {
   createdOn: DateKey;
   /** Convenience mirror of the latest archive version's date, if currently archived. */
   archivedFrom?: DateKey;
+  /**
+   * A built-in habit every player has. 'water' is tracked on its own bar and streak and feeds
+   * Ari's condition, but never counts toward the story day or the weekly climb.
+   */
+  system?: 'water';
   /** Sorted by from; never edited once superseded. */
   versions: HabitVersion[];
 }
@@ -186,6 +194,18 @@ export interface Derived {
   records: RecordMark[];
   lifetime: { daysShownUp: number; fulfilled: number };
   climb: Climb;
+  /** The built-in water bar, when the player has it (everyone does after setup). */
+  water: Water | null;
+}
+
+export interface Water {
+  habit: HabitId;
+  /** Glasses today. */
+  today: number;
+  target: number;
+  /** Write time of today's last change (ms), for the in-app reminder. */
+  lastAt: number | null;
+  streak: number;
 }
 
 /** Weekly verdicts (docs/decisions/weekly-climb.md). */

@@ -62,7 +62,7 @@ export class SetupView {
   render(v: View, section?: string): void {
     const focusId = (document.activeElement as HTMLElement | null)?.id;
     clear(this.body);
-    this.body.append(this.habits(v), this.settings(v), this.correct(v), this.backup(v), this.sync(v));
+    this.body.append(this.habits(v), this.water(v), this.settings(v), this.correct(v), this.backup(v), this.sync(v));
     if (section) document.getElementById(section)?.scrollIntoView({ block: 'start' });
     if (focusId) document.getElementById(focusId)?.focus();
   }
@@ -72,6 +72,7 @@ export class SetupView {
   private habits(v: View): HTMLElement {
     const list = h('ul', { class: 'setup-list' });
     for (const hb of v.snapshot.habits.habits) {
+      if (hb.system) continue; // the water bar has its own section
       const archived = versionOn(hb, v.today)?.archived === true || (hb.archivedFrom !== undefined && compareDateKeys(hb.archivedFrom, v.today) <= 0);
       const li = h('li', { class: `setup-habit${archived ? ' archived' : ''}` });
       const def = latestDefinition(hb);
@@ -80,7 +81,7 @@ export class SetupView {
       );
       const actions = h('div', { class: 'row-actions' });
       if (this.editing === hb.id) {
-        const form = new HabitForm(`Edit ${hb.name}`, { name: hb.name, category: hb.category, version: def });
+        const form = new HabitForm(`Edit ${hb.name}`, { name: hb.name, version: def });
         const save = h('button', { class: 'btn primary', text: 'Save changes' });
         const cancel = h('button', { class: 'btn ghost', text: 'Cancel' });
         save.addEventListener('click', () => {
@@ -90,7 +91,7 @@ export class SetupView {
             r.field.focus();
             return;
           }
-          const res = this.app.editHabit(hb.id, r.draft.name, r.draft.category, r.draft.definition);
+          const res = this.app.editHabit(hb.id, r.draft.name, r.draft.definition);
           this.say(res, 'Saved. Changes to the target or schedule apply from today; past days keep their rules.');
           if (res.ok) {
             this.editing = null;
@@ -127,7 +128,7 @@ export class SetupView {
         r.field.focus();
         return;
       }
-      const res = this.app.addHabit(r.draft.name, r.draft.category, r.draft.definition);
+      const res = this.app.addHabit(r.draft.name, r.draft.definition);
       this.say(res, `${r.draft.name} added. It starts today.`);
       if (res.ok) this.render(this.app.view());
     });
@@ -145,6 +146,25 @@ export class SetupView {
       if (r.ok) this.render(this.app.view());
     });
     return h('details', { class: 'danger-zone' }, h('summary', { text: 'Delete' }), h('label', { for: id, text: `Type ${hb.name} to delete it and all its history. This cannot be undone.` }), input, btn);
+  }
+
+  // Water ----------------------------------------------------------------------------------
+
+  private water(v: View): HTMLElement {
+    const w = v.derived.water;
+    if (!w) return section('setup-water', 'Water', 'The water bar appears once setup is finished.');
+    const input = h('input', { id: 'water-target', type: 'number', min: '1', max: '30', step: '1', inputmode: 'numeric' });
+    input.value = String(w.target);
+    const save = h('button', { class: 'btn primary', text: 'Save' });
+    save.addEventListener('click', () => this.say(this.app.setWaterTarget(Number(input.value)), 'Water goal saved from today.'));
+    return section(
+      'setup-water',
+      'Water',
+      'Every climber carries water. It has its own bar and streak, and keeps Ari strong; it never moves the story day or the climb.',
+      h('div', { class: 'field' }, h('label', { for: 'water-target', text: 'Glasses a day (one glass is about 250 ml)' }), input),
+      h('p', { class: 'hint', text: 'While Ascent is open, the bar reminds you when two hours pass without a glass. It cannot notify you while closed.' }),
+      h('div', { class: 'row-actions' }, save),
+    );
   }
 
   // Settings -------------------------------------------------------------------------------
@@ -190,6 +210,7 @@ export class SetupView {
   private correct(v: View): HTMLElement {
     const date = h('input', { id: 'fix-date', type: 'date', max: v.today });
     const habit = h('select', { id: 'fix-habit' }, ...v.snapshot.habits.habits.map((x) => h('option', { value: x.id, text: x.name })));
+
     const what = h(
       'select',
       { id: 'fix-what' },

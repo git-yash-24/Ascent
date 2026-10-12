@@ -8,7 +8,7 @@ import type { CorrectionsDoc, Entry, HabitsDoc, MonthLog, Profile, SeenDoc } fro
 
 export const CURRENT_SCHEMA = {
   profile: 2,
-  habits: 1,
+  habits: 2,
   log: 1,
   seen: 1,
   corrections: 1,
@@ -45,6 +45,10 @@ const habitVersion = z
     schedule,
     label: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
     archived: z.literal(true).optional(),
+    time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
   })
   .strict()
   .refine((v) => v.minimum <= v.target, { message: 'minimum above target' })
@@ -59,6 +63,7 @@ const habit = z
     category: z.enum(['prepare', 'test', 'repair', 'effort', 'presence', 'rest', 'record', 'make', 'care']),
     createdOn: dateKey,
     archivedFrom: dateKey.optional(),
+    system: z.literal('water').optional(),
     versions: z.array(habitVersion).min(1).max(500),
   })
   .strict()

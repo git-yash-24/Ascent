@@ -14,6 +14,27 @@ import { backupDue, exportCsv, exportJson, backupFileName, prepareImport, type P
 import type { SyncedStore, StoreState } from '../data/store';
 import type { KV } from '../data/sync/journal';
 
+/**
+ * Which of Ari's chores a habit becomes is the story's choice, made per scene so it stays
+ * fresh. The stored category is only a starting hint; the person is never asked.
+ */
+const STORY_CHOOSES: Habit['category'] = 'effort';
+
+export const WATER_ID = 'water';
+
+function withWater(doc: HabitsDoc, today: DateKey): HabitsDoc {
+  if (doc.habits.some((x) => x.system === 'water')) return doc;
+  const water: Habit = {
+    id: WATER_ID,
+    name: 'Water',
+    category: 'care',
+    createdOn: today,
+    system: 'water',
+    versions: [{ from: today, type: 'numeric', unit: 'glasses', target: 8, minimum: 6, schedule: { kind: 'daily' } }],
+  };
+  return { ...doc, habits: [...doc.habits, water] };
+}
+
 export interface Clock {
   now(): number;
   zone(): string;
@@ -211,7 +232,7 @@ export class Controller {
 
   // Setup -----------------------------------------------------------------------------------
 
-  start(input: { identity: string; habits: Array<{ name: string; category: Habit['category']; definition: Definition }> }): ActionResult {
+  start(input: { identity: string; habits: Array<{ name: string; definition: Definition }> }): ActionResult {
     const profile: Profile = {
       schema: CURRENT_SCHEMA.profile,
       identity: input.identity.trim(),
@@ -221,7 +242,8 @@ export class Controller {
     };
     let doc: HabitsDoc = { schema: CURRENT_SCHEMA.habits, habits: [] };
     try {
-      for (const hb of input.habits) doc = createHabit(doc, { id: this.newId(), name: hb.name.trim(), category: hb.category, today: this.today, definition: hb.definition });
+      for (const hb of input.habits) doc = createHabit(doc, { id: this.newId(), name: hb.name.trim(), category: STORY_CHOOSES, today: this.today, definition: hb.definition });
+      doc = withWater(doc, this.today);
       this.store.putDoc('habits', doc);
       this.store.putDoc('profile', profile);
     } catch (e) {
@@ -230,13 +252,44 @@ export class Controller {
     return { ok: true };
   }
 
-  addHabit(name: string, category: Habit['category'], definition: Definition): ActionResult {
-    return this.saveHabits((doc) => createHabit(doc, { id: this.newId(), name: name.trim(), category, today: this.today, definition }));
+  /** Every player has the water bar; add it to an existing record that predates it. */
+  ensureWater(): void {
+    const s = this.store.current.snapshot;
+    if (!s.profile || s.habits.habits.some((x) => x.system === 'water')) return;
+    try {
+      this.store.putDoc('habits', withWater(s.habits, this.today));
+    } catch {
+      // leave the record untouched if it cannot take the habit
+    }
   }
 
-  editHabit(id: HabitId, name: string, category: Habit['category'], definition: Definition): ActionResult {
+  /** One glass more (or fewer). Water is always logged for today. */
+  addGlass(delta: 1 | -1): ActionResult {
+    const w = this.view().derived.water;
+    if (!w) return { ok: false, message: 'The water bar is not set up yet.' };
+    const next = Math.max(0, w.today + delta);
+    const r = logEntry(this.store.current.snapshot, this.today, this.today, w.habit, this.entry({ v: next }));
+    if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be saved.' };
+    this.store.putEntry(this.today, w.habit, this.entry({ v: next }));
+    return { ok: true };
+  }
+
+  setWaterTarget(glasses: number): ActionResult {
+    if (!Number.isInteger(glasses) || glasses < 1 || glasses > 30) return { ok: false, message: 'Choose 1 to 30 glasses.' };
+    const h = this.store.current.snapshot.habits.habits.find((x) => x.system === 'water');
+    if (!h) return { ok: false, message: 'The water bar is not set up yet.' };
+    return this.saveHabits((doc) =>
+      editDefinition(doc, h.id, this.today, { type: 'numeric', unit: 'glasses', target: glasses, minimum: Math.max(1, Math.round(glasses * 0.75)), schedule: { kind: 'daily' } }),
+    );
+  }
+
+  addHabit(name: string, definition: Definition): ActionResult {
+    return this.saveHabits((doc) => createHabit(doc, { id: this.newId(), name: name.trim(), category: STORY_CHOOSES, today: this.today, definition }));
+  }
+
+  editHabit(id: HabitId, name: string, definition: Definition): ActionResult {
     return this.saveHabits((doc) => {
-      let next = renameHabit(doc, id, name.trim(), category);
+      let next = renameHabit(doc, id, name.trim());
       const h = next.habits.find((x) => x.id === id);
       const cur = h ? versionOn(h, this.today) : undefined;
       const changed =
@@ -244,6 +297,7 @@ export class Controller {
         cur.target !== (definition.type === 'binary' || definition.type === 'avoid' ? 1 : definition.target) ||
         cur.minimum !== (definition.minimum ?? cur.minimum) ||
         (cur.unit ?? '') !== (definition.unit ?? '') ||
+        (cur.time ?? '') !== (definition.time ?? '') ||
         !sameChainRules(cur, { ...cur, type: definition.type, schedule: definition.schedule });
       if (changed) next = editDefinition(next, id, this.today, definition);
       return next;

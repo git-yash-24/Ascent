@@ -134,6 +134,7 @@ export function computeClimb(input: ClimbInput): Climb {
 
       const shares: number[] = [];
       for (const h of habits) {
+        if (h.system) continue; // water never moves the climb
         // Timelines are indexed by days since creation: slice just this week (keeps derive linear).
         const tl = timelines.get(h.id) ?? [];
         const from = Math.max(0, diffDays(h.createdOn, mon));

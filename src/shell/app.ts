@@ -132,6 +132,7 @@ export async function boot(root: HTMLElement): Promise<void> {
 
   paint(app.view());
   await store.open();
+  app.ensureWater();
   check();
   paint(app.view());
 }

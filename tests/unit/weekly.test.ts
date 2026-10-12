@@ -204,3 +204,30 @@ describe('choosing the steep line', () => {
     expect(chooseSteep(fresh, derive(fresh, { date: MON, ended: false }).climb, MON)).toEqual({ ok: false, reason: 'locked' });
   });
 });
+
+describe('the built-in water habit', () => {
+  const water = (d: string) => ({
+    id: 'water',
+    name: 'Water',
+    category: 'care' as const,
+    createdOn: d,
+    system: 'water' as const,
+    versions: [{ from: d, type: 'numeric' as const, unit: 'glasses', target: 8, minimum: 6, schedule: { kind: 'daily' as const } }],
+  });
+
+  it('has its own bar and streak but never moves the story day or the climb', () => {
+    let s = withHabits(R(MON), water(MON));
+    s = logRange(s, MON, 7, 'water', 8);
+    const only = derive(s, endOf(0));
+    expect(only.storyDayEarned).toBe(0);
+    expect(only.climb.weeks[0]?.raw).toBe(0);
+    expect(only.water).toMatchObject({ habit: 'water', today: 8, target: 8, streak: 7 });
+    expect(only.lifetime.fulfilled).toBe(0);
+    // With the real habit done, water changes nothing in the climb.
+    s = week(s, 0, 0, 7);
+    const both = derive(s, endOf(0));
+    const without = derive(week(withHabits(R(MON)), 0, 0, 7), endOf(0));
+    expect(both.climb).toEqual(without.climb);
+    expect(both.storyDayEarned).toBe(without.storyDayEarned);
+  });
+});
