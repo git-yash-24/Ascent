@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { buildWorld, groundHeight, pathX } from './world';
 import { buildCamp } from './camp';
-import { buildClimber, POSES, walkPose, lerpPose, type Keyframe, type Pose } from './climber';
+import { buildClimber, POSES, walkPose, lerpPose, type Pose } from './climber';
+import { RISE as SHARED_RISE, SCRIPT } from '../shared/poses';
 import { buildWeek, type Outcome } from './week';
-import { createSound } from './audio';
+import { createSound } from '../shared/audio';
 import { glowTexture } from './world';
 
 type Phase = 'sitting' | 'rising' | 'walking' | 'toWeek' | 'week' | 'toCamp';
@@ -104,29 +105,14 @@ $('soundBtn').addEventListener('click', (e) => {
 });
 
 // ---------- Timelines ----------
-const RISE: Keyframe[] = [
-  { at: 0.0, pose: POSES.sitHunched },
-  { at: 0.9, pose: POSES.sitHunched },
-  { at: 2.0, pose: POSES.sitLookUp },
-  { at: 2.6, pose: POSES.sitLookUp },
-  { at: 3.5, pose: POSES.handsOnKnees },
-  { at: 4.5, pose: POSES.stand },
-  { at: 5.3, pose: POSES.stretch },
-  { at: 6.1, pose: POSES.stand },
-  { at: 6.8, pose: POSES.reachDown },
-  { at: 7.6, pose: POSES.shoulderPack },
-  { at: 8.3, pose: POSES.stand },
-  { at: 8.7, pose: POSES.kickBack },
-  { at: 9.0, pose: POSES.kickForward },
-  { at: 9.5, pose: POSES.stand },
-];
-const T_PICKUP = 6.95;
-const T_KICK = 9.0;
-const T_TURN = 9.5;
-const T_WALK = 10.4;
-const WALK_SPEED = 1.05;
-const STRIDE = 1.35;
-const WALK_LIMIT = 70;
+const RISE = SHARED_RISE;
+const T_PICKUP = SCRIPT.pickUp;
+const T_KICK = SCRIPT.kick;
+const T_TURN = SCRIPT.turn;
+const T_WALK = SCRIPT.walk;
+const WALK_SPEED = SCRIPT.walkSpeed;
+const STRIDE = SCRIPT.stride;
+const WALK_LIMIT = SCRIPT.walkLimit;
 
 // ---------- State ----------
 let phase: Phase = 'sitting';
@@ -306,7 +292,8 @@ document.addEventListener('visibilitychange', () => {
 
 function frame(nowMs: number): void {
   if (!running) return;
-  const dt = Math.min(0.05, (nowMs - last) / 1000) * speed;
+  const realDt = (nowMs - last) / 1000;
+  const dt = Math.min(0.05, realDt) * speed;
   last = nowMs;
   clock += dt;
   const t = clock - phaseStart;
@@ -465,7 +452,7 @@ function frame(nowMs: number): void {
   renderer.render(scene, camera);
 
   fpsFrames++;
-  fpsTime += dt;
+  fpsTime += realDt;
   if (fpsTime > 0.5) {
     fpsEl.textContent = `${Math.round(fpsFrames / fpsTime)} fps`;
     fpsFrames = 0;

@@ -12,7 +12,8 @@
     "build": "tsc --noEmit && vite build",
     "artifact": "npm run build && node tools/artifactize.mjs",
     "check": "npm run typecheck && npm run test && npm run artifact",
-    "build:feel3d": "tsc --noEmit && vite build --config vite.feel3d.config.ts && node tools/artifactize.mjs dist/feel-3d/prototypes/feel-3d.html dist/feel-3d/ascent-feel-3d.html"
+    "build:feel3d": "tsc --noEmit && vite build --config vite.feel3d.config.ts && node tools/artifactize.mjs dist/feel-3d/prototypes/feel-3d.html dist/feel-3d/ascent-feel-3d.html",
+    "build:silhouette": "tsc --noEmit && vite build --config vite.silhouette.config.ts && node tools/artifactize.mjs dist/feel-silhouette/prototypes/feel-silhouette.html dist/feel-silhouette/ascent-feel-silhouette.html"
   },
   "devDependencies": {
     "@types/three": "0.169.0",

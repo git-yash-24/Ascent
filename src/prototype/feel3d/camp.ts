@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { glowTexture, groundHeight } from './world';
-import { mulberry32, valueNoise } from './noise';
+import { mulberry32, valueNoise } from '../shared/noise';
 
 function flameTexture(): THREE.CanvasTexture {
   const cv = document.createElement('canvas');
