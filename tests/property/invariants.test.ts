@@ -86,7 +86,7 @@ describe('invariants', () => {
             if (state === 'missed') expect(e?.skip).toBeUndefined();
             if (e?.skip !== undefined && state !== 'unscheduled') expect(state).toBe('skipped');
           }
-          if (day.outcome === 'rested') expect(Object.values(day.states)).toContain('skipped');
+          if (day.outcome === 'rested' || day.outcome === 'excused') expect(Object.values(day.states)).toContain('skipped');
         }
       }),
       { numRuns: RUNS },
@@ -139,6 +139,31 @@ describe('invariants', () => {
         const after = derive(s, now(h));
         expect(after.storyDayEarned).toBe(base.storyDayEarned);
         expect(after.storyDayEarned).toBeLessThanOrEqual(Object.keys(after.days).length);
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
+  it('the climb moves at most one stage down and two up a week, never below a chapter base', () => {
+    fc.assert(
+      fc.property(historyArb, (h) => {
+        const { climb } = derive(h.snapshot, now(h));
+        let stage = 0;
+        let comebacks = -100;
+        climb.weeks.forEach((w, i) => {
+          expect(w.moved).toBeGreaterThanOrEqual(-1);
+          expect(w.moved).toBeLessThanOrEqual(w.comeback ? 2 : 1);
+          expect(w.stageAfter).toBeGreaterThanOrEqual(Math.floor(stage / 4) * 4);
+          if (w.moved === 2) {
+            expect(i - comebacks).toBeGreaterThanOrEqual(8);
+            comebacks = i;
+          }
+          if (w.score !== null) expect(w.score).toBeLessThanOrEqual(1);
+          stage = w.stageAfter;
+        });
+        expect(climb.stage).toBe(stage);
+        // No more stages than weeks, plus one extra per comeback: the year cannot be rushed.
+        expect(climb.stage).toBeLessThanOrEqual(climb.weeks.length + Math.ceil(climb.weeks.length / 8));
       }),
       { numRuns: RUNS },
     );

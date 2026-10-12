@@ -32,6 +32,8 @@ export const MIGRATIONS: MigrationTable = {
         ...(isObject(d.settings) ? d.settings : {}),
       },
     }),
+    // Schema 2 adds the weekly climb choices.
+    1: (d) => ({ ...d, schema: 2, weekly: { steep: [] } }),
   },
   habits: { 0: (d) => ({ ...d, schema: 1, habits: Array.isArray(d.habits) ? d.habits : [] }) },
   log: { 0: (d) => ({ ...d, schema: 1, days: isObject(d.days) ? d.days : {} }) },

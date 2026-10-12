@@ -15,8 +15,10 @@ import type {
   HabitId,
   Now,
   RecordMark,
+  SkipReason,
   Snapshot,
 } from './model/types';
+import { computeClimb } from './habits/weekly';
 import { habitChain } from './habits/chains';
 import { isHeld } from './habits/state';
 import { habitTimeline, type HabitDay } from './habits/timeline';
@@ -30,11 +32,11 @@ const RESOLVE_TIERS: Array<[number, 0 | 1 | 2 | 3]> = [
   [15, 1],
 ];
 
-export function outcomeOf(counted: Array<{ state: HabitDayState }>, isEnded: boolean): DayOutcome {
+export function outcomeOf(counted: Array<{ state: HabitDayState; skip?: SkipReason }>, isEnded: boolean): DayOutcome {
   if (counted.length === 0) return 'free';
   const all = (p: (s: HabitDayState) => boolean): boolean => counted.every((c) => p(c.state));
   const any = (p: (s: HabitDayState) => boolean): boolean => counted.some((c) => p(c.state));
-  if (all((s) => s === 'skipped')) return 'rested';
+  if (all((s) => s === 'skipped')) return counted.some((c) => c.skip === 'sick') ? 'excused' : 'rested';
   if (all((s) => s === 'fulfilled' || s === 'skipped') && any((s) => s === 'fulfilled')) return 'closed';
   if (any(isHeld)) return 'partial';
   return isEnded ? 'missed' : 'inProgress';
@@ -82,7 +84,7 @@ export function derive(s: Snapshot, now: Now): Derived {
     }
     for (let i = 0; i < order.length; i++) {
       const date = order[i] as DateKey;
-      const counted: Array<{ state: HabitDayState; credit: number }> = [];
+      const counted: HabitDay[] = [];
       for (const h of habits) {
         const tl = timelines.get(h.id);
         if (!tl) continue;
@@ -113,7 +115,7 @@ export function derive(s: Snapshot, now: Now): Derived {
 
   // 7. Condition.
   const todayDay = days[today];
-  const warmth = todayDay ? (todayDay.outcome === 'rested' ? 1 : todayDay.progress) : 0;
+  const warmth = todayDay ? (todayDay.outcome === 'rested' || todayDay.outcome === 'excused' ? 1 : todayDay.progress) : 0;
   const fatigueRate = rateOver(days, sinceLastAbsence(days, ended), today, 7);
   const fatigue: Derived['condition']['fatigue'] =
     fatigueRate === null || fatigueRate >= 0.75 ? 'fresh' : fatigueRate >= 0.5 ? 'tired' : 'worn';
@@ -133,6 +135,14 @@ export function derive(s: Snapshot, now: Now): Derived {
     condition: { warmth, fatigue, resolveTier },
     records,
     lifetime: { daysShownUp, fulfilled },
+    climb: computeClimb({
+      habits,
+      timelines,
+      days,
+      today,
+      todayEnded: now.ended,
+      steep: s.profile?.weekly.steep ?? [],
+    }),
   };
 }
 
@@ -150,7 +160,7 @@ function rateOver(days: Record<DateKey, DayDerived>, ended: DateKey[], today: Da
     const date = ended[i] as DateKey;
     if (compareDateKeys(date, from) < 0) break;
     const d = days[date] as DayDerived;
-    if (d.outcome === 'free' || d.outcome === 'inProgress') continue;
+    if (d.outcome === 'free' || d.outcome === 'inProgress' || d.outcome === 'excused') continue;
     n++;
     sum += d.outcome === 'rested' ? 1 : d.outcome === 'missed' ? 0 : d.progress;
   }
@@ -163,7 +173,7 @@ function sinceLastAbsence(days: Record<DateKey, DayDerived>, ended: DateKey[]): 
   let cut = 0;
   ended.forEach((date, i) => {
     const o = (days[date] as DayDerived).outcome;
-    if (o === 'free') return;
+    if (o === 'free' || o === 'excused') return;
     if (o === 'missed') {
       run++;
       if (run >= 3) cut = i + 1;
@@ -194,7 +204,7 @@ function deriveRecords(
       let ok = true;
       for (let i = 0; i < 7; i++) {
         const o = (days[addDays(mon, i)] as DayDerived).outcome;
-        if (o === 'free') continue;
+        if (o === 'free' || o === 'excused') continue;
         nonFree++;
         if (o === 'closed') closed++;
         else if (o !== 'rested') ok = false;
@@ -220,7 +230,7 @@ function deriveRecords(
   let back = 0;
   for (const date of ended) {
     const o = (days[date] as DayDerived).outcome;
-    if (o === 'free') continue;
+    if (o === 'free' || o === 'excused') continue;
     if (o === 'missed') {
       missRun++;
       if (missRun >= 7) {

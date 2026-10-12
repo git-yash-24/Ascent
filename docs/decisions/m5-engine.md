@@ -21,6 +21,17 @@ be challenged before M6 builds on it.
 | A-M5-11 | Eastward travel where the local date jumps twice | Roll one date at a time; while catching up, each day lasts at least 12 hours | "Travelling never creates or deletes a day" (T11) |
 | A-M5-12 | Undo across devices | Stored as a cleared entry (a tombstone with its write time), so an older write cannot resurrect the value | Merge is last-write-wins per habit-day |
 
+Confirmed by Xander on 2026-10-13: all twelve stand.
+
+## Changes after review (2026-10-13)
+
+- The weekly climb (`docs/decisions/weekly-climb.md`): a weekly score in each habit's own unit
+  decides whether Ari climbs, holds or slips a stage.
+- Sick days: a day with every habit skipped as sick is a new outcome, *excused*. Streaks hold and
+  nothing is missed, but the story does not advance. Other skip reasons still rest the day and
+  advance the story.
+- The regression hash was updated for these two changes.
+
 ## Matrix coverage in M5
 
 - H01 to H24: `tests/unit/habits.test.ts`.

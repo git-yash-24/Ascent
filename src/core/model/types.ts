@@ -91,6 +91,11 @@ export interface Profile {
     music: boolean;
     reducedMotion: boolean;
   };
+  /** Weekly climb choices (schema 2). */
+  weekly: {
+    /** Monday of each week the steep line was chosen. */
+    steep: DateKey[];
+  };
 }
 
 export interface HabitsDoc {
@@ -138,7 +143,11 @@ export type HabitDayState =
   | 'skipped'
   | 'missed';
 
-export type DayOutcome = 'inProgress' | 'closed' | 'rested' | 'partial' | 'missed' | 'free';
+/**
+ * excused: every counted habit skipped as sick. Streaks hold, nothing is missed, and the story
+ * does not advance (Xander, 2026-10-13: "sick days maintain the streak but no progress made").
+ */
+export type DayOutcome = 'inProgress' | 'closed' | 'rested' | 'excused' | 'partial' | 'missed' | 'free';
 
 export interface DayDerived {
   outcome: DayOutcome;
@@ -176,6 +185,41 @@ export interface Derived {
   };
   records: RecordMark[];
   lifetime: { daysShownUp: number; fulfilled: number };
+  climb: Climb;
+}
+
+/** Weekly verdicts (docs/decisions/weekly-climb.md). */
+export type Verdict = 'summit' | 'climb' | 'hold' | 'slip' | 'rest';
+
+export interface WeekResult {
+  /** Monday. */
+  week: DateKey;
+  /** Mean of each habit's share of its weekly plan, 0 to 1, before any head start. */
+  raw: number | null;
+  /** raw plus the head start carried in, capped at 1. */
+  score: number | null;
+  headstartIn: number;
+  steep: boolean;
+  comeback: boolean;
+  verdict: Verdict;
+  /** Stages moved this week (negative for a slip). */
+  moved: number;
+  stageAfter: number;
+  /** Head start earned for next week. */
+  headstartOut: number;
+}
+
+export interface Climb {
+  stage: number;
+  chapter: number;
+  /** Ended weeks, oldest first. */
+  weeks: WeekResult[];
+  /** The week in progress: live score and the verdict it would get now. */
+  current: WeekResult | null;
+  /** True once the steep line can be chosen. */
+  steepUnlocked: boolean;
+  /** Consecutive ended weeks at 50% or more (rest weeks neutral). */
+  weeklyChain: number;
 }
 
 /** The current logical day, and whether its boundary has already passed. */

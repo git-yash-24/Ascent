@@ -3,11 +3,11 @@
  * Documents are validated after migration, at the boundary between the store and the core.
  */
 import { z } from 'zod';
-import { isDateKey } from './date';
+import { isDateKey, weekStart } from './date';
 import type { CorrectionsDoc, Entry, HabitsDoc, MonthLog, Profile, SeenDoc } from './types';
 
 export const CURRENT_SCHEMA = {
-  profile: 1,
+  profile: 2,
   habits: 1,
   log: 1,
   seen: 1,
@@ -91,6 +91,14 @@ export const profileSchema = z
         sound: z.boolean(),
         music: z.boolean(),
         reducedMotion: z.boolean(),
+      })
+      .strict(),
+    weekly: z
+      .object({
+        steep: z
+          .array(dateKey)
+          .max(2000)
+          .refine((a) => a.every((d) => isDateKey(d) && weekStart(d) === d), { message: 'steep weeks must be Mondays' }),
       })
       .strict(),
   })

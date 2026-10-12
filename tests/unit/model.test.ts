@@ -56,6 +56,19 @@ describe('migrations', () => {
     expect(load('log', { days: {} }).ok).toBe(true);
   });
 
+  it('profile schema 1 gains an empty weekly climb record in schema 2', () => {
+    const v1 = {
+      schema: 1,
+      identity: 'I show up',
+      startDate: D1,
+      settings: { dayBoundary: 240, timeZone: 'Asia/Manila', sound: true, music: true, reducedMotion: false },
+    };
+    const r = load('profile', v1);
+    expect(r.ok && r.value.weekly).toEqual({ steep: [] });
+    expect(r.ok && r.value.schema).toBe(2);
+    expect(load('profile', { ...v1, schema: 2, weekly: { steep: ['2026-10-13'] } }).ok).toBe(false); // a Tuesday
+  });
+
   it('refuses a schema newer than the app', () => {
     const r = load('log', { schema: 99, days: {} });
     expect(r.ok).toBe(false);
