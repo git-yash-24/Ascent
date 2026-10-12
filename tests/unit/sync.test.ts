@@ -255,3 +255,18 @@ describe('open', () => {
     expect(entryOn(b.current.snapshot, D, 'R')?.v).toBe(1);
   });
 });
+
+describe('no flicker', () => {
+  it('a confirmed entry never disappears from the snapshot before the background refresh', async () => {
+    const backend = new MemoryBackend();
+    const s = store({ backend });
+    await s.open();
+    await withHabitsDoc(s);
+    const seen: Array<number | undefined> = [];
+    s.onChange((st) => seen.push(entryOn(st.snapshot, D, 'R')?.v));
+    s.putEntry(D, 'R', { v: 1, at: ++clock, dev: 'devA' });
+    await settle();
+    expect(seen.every((v) => v === 1)).toBe(true);
+    expect(s.current.status).toBe('synced');
+  });
+});
