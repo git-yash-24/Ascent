@@ -40,4 +40,6 @@ Rule: nothing in `src/core` or `src/data` imports from the presentation layers.
 
 - M7: export (JSON and CSV), import with dry run and a safety export first, weekly backup prompt (`docs/decisions/m7-backup.md`).
 
-Next: M8, the accessible checklist and Setup, working with no world at all.
+- M8: the beta page: accessible checklist and Setup, working with no world (`docs/decisions/m8-checklist.md`). `npm run test:e2e` for the browser tests.
+
+Next: M9, world v1 in 3D behind the checklist.

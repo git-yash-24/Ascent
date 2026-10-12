@@ -106,6 +106,13 @@ export class SyncedStore {
 
   /** Read everything, lay the unconfirmed journal on top, start syncing. */
   async open(): Promise<StoreState> {
+    // Show the last synced copy at once (the checklist must be usable within a second), then
+    // replace it with the account's current state when that arrives.
+    const cached = this.readCache();
+    if (cached) {
+      this.remote = cached;
+      this.rebuild();
+    }
     let offline = false;
     if (this.backend) {
       try {
@@ -212,10 +219,10 @@ export class SyncedStore {
         for (const op of [...this.journal.pending]) await this.send(backend, op);
       }
       this.failures = 0;
-      // Fold our confirmed writes into the remote view so the snapshot no longer depends on
-      // the journal for them.
-      await this.pull().catch(() => undefined);
-      this.rebuild();
+      // Every op is confirmed by its own read-back, so the record is safe now. Refresh the
+      // remote view in the background (it folds in other devices too) instead of holding
+      // "Saving" for a full re-read (phone measurement, M6: about 2 s).
+      this.refreshSoon();
     } catch {
       this.failures++;
       this.scheduleRetry();
@@ -233,12 +240,27 @@ export class SyncedStore {
       } else {
         await backend.putDoc(op.doc, op.body);
       }
+      // The op is on the account now: carry it in the remote view before dropping it from the
+      // journal, so the snapshot never blinks between the two.
+      this.remote = op.kind === 'entry' ? mergeEntry(this.remote, op.date, op.habit, op.e) : ({ ...this.remote, [op.doc]: op.body } as Snapshot);
       this.journal.confirm(op);
     } catch (e) {
       if (!(e instanceof PermanentBackendError)) throw e;
       this.journal.confirm(op);
       this.state = { ...this.state, rejected: [...this.state.rejected, op] };
     }
+  }
+
+  private refreshing = false;
+  private refreshSoon(): void {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    void this.pull()
+      .then(() => this.rebuild())
+      .catch(() => undefined)
+      .finally(() => {
+        this.refreshing = false;
+      });
   }
 
   private scheduleRetry(): void {

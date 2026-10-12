@@ -6,69 +6,173 @@
     <title>Ascent</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;700&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,600;1,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" />
     <style>
-      /* Layout: one centred column; a night camp. The page's single warm colour is Ari's hood. */
+      /* Layout: one thumb-reach column at night camp. Summary first (where you stand), then the day chips, then the habits as large rows. Single dark look by choice: the world is a night mountain. One warm colour, the fire. */
       :root {
-        --bg: #0e1218;
-        --surface: #151b24;
-        --line: #252e3b;
-        --ink: #ece6da;
-        --muted: #9aa3b0;
-        --ember: #e0693a;
-        --ok: #7fc59a;
-        --warn: #e2b259;
-        --bad: #e2786c;
+        --bg: #0d1117;
+        --surface: #141a22;
+        --raise: #1a222c;
+        --line: #26303c;
+        --ink: #ede7dc;
+        --muted: #a29d94;
+        --dim: #6f7680;
+        --ember: #e2733f;
+        --ember-soft: rgba(226, 115, 63, 0.16);
+        --ember-ink: #1c0f08;
+        --frost: #9cc3e0;
+        --ok: #86c49a;
+        --warn: #e3b55b;
+        --bad: #e2695a;
         --f-display: 'Spectral', Georgia, 'Times New Roman', serif;
-        --f-body: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
-        --f-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+        --f-body: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        --f-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        --r: 12px;
         color-scheme: dark;
       }
-      @media (prefers-color-scheme: light) {
-        :root:not([data-theme='dark']) {
-          --bg: #f3efe7; --surface: #fbf9f4; --line: #ddd5c6; --ink: #1d2128; --muted: #5d6470;
-          --ember: #b8481c; --ok: #2f7d4f; --warn: #94650c; --bad: #a83a2e; color-scheme: light;
-        }
-      }
-      :root[data-theme='light'] {
-        --bg: #f3efe7; --surface: #fbf9f4; --line: #ddd5c6; --ink: #1d2128; --muted: #5d6470;
-        --ember: #b8481c; --ok: #2f7d4f; --warn: #94650c; --bad: #a83a2e; color-scheme: light;
-      }
       * { box-sizing: border-box; }
-      body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
-      main { max-width: 560px; margin: 0 auto; padding-inline: 20px; padding-block: 56px 64px; display: grid; gap: 28px; }
-      .mark { display: flex; align-items: center; gap: 14px; }
-      .ember { width: 14px; height: 14px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 18px 4px color-mix(in srgb, var(--ember) 55%, transparent); animation: flicker 2.4s ease-in-out infinite; }
-      @keyframes flicker { 0%, 100% { opacity: 1; transform: scale(1); } 40% { opacity: .78; transform: scale(.92); } 70% { opacity: .92; transform: scale(1.05); } }
-      @media (prefers-reduced-motion: reduce) { .ember { animation: none; } }
-      h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(2.6rem, 9vw, 3.6rem); letter-spacing: .01em; line-height: 1; margin: 0; }
-      .lede { margin: 0; color: var(--muted); max-width: 44ch; text-wrap: pretty; }
-      .meta { font-family: var(--f-mono); font-size: 12.5px; color: var(--muted); display: grid; gap: 4px; }
-      h2 { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
-      ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
-      .check { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-block: 14px; border-bottom: 1px solid var(--line); }
-      .check-body { min-width: 0; }
-      .check-label { font-weight: 500; }
-      .check-detail { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
-      .pill { flex: none; font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; }
-      .check[data-status='yes'] .pill { color: var(--ok); }
-      .check[data-status='partial'] .pill { color: var(--warn); }
-      .check[data-status='no'] .pill { color: var(--bad); }
-      .check[data-status='pending'] .pill { color: var(--muted); }
-      footer { color: var(--muted); font-size: 13.5px; }
+      [hidden] { display: none !important; }
+      html { -webkit-text-size-adjust: 100%; }
+      body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--f-body); -webkit-tap-highlight-color: transparent; }
+      #app { max-width: 600px; margin: 0 auto; padding-inline: 16px; padding-block: 0 56px; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+      h1, h2, h3 { text-wrap: balance; margin: 0; }
+      button, input, select, textarea { font: inherit; color: inherit; }
+      button { cursor: pointer; }
+      :focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
+      @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+      /* Header */
+      .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); display: flex; align-items: center; gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--line); }
+      .mark { font: 600 22px/1 var(--f-display); letter-spacing: .01em; }
+      .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+      .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); }
+      .dot[data-s='saving'] { border-color: var(--warn); animation: pulse 1s infinite; }
+      .dot[data-s='local'] { border-color: var(--warn); }
+      .dot[data-s='unsaved'] { background: var(--bad); border-color: var(--bad); }
+      @keyframes pulse { 50% { opacity: .3; } }
+      .nav { margin-left: auto; }
+
+      .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--raise); color: var(--ink); font-weight: 600; text-decoration: none; }
+      .btn.primary { background: var(--ember); border-color: var(--ember); color: var(--ember-ink); }
+      .btn.ghost { background: transparent; }
+      .btn.danger { border-color: var(--bad); color: var(--bad); background: transparent; }
+      .btn.big { min-height: 56px; font-size: 17px; padding: 0 24px; }
+      .btn:disabled { opacity: .45; cursor: default; }
+
+      /* Summary */
+      .today { display: grid; gap: 16px; padding-block: 16px; }
+      .summary { display: grid; gap: 14px; }
+      .coach { margin: 0; font: italic 500 20px/1.3 var(--f-display); color: var(--ink); }
+      .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 2px; min-width: 0; }
+      .stat .label, .meter .label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+      .stat .num { font: 500 24px/1.1 var(--f-mono); font-variant-numeric: tabular-nums; }
+      .stat .note { font-size: 12px; color: var(--muted); }
+      .meter { display: grid; gap: 6px; }
+      .meter-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+      .meter .val { font: 500 14px var(--f-mono); font-variant-numeric: tabular-nums; }
+      .track { position: relative; height: 10px; border-radius: 6px; background: var(--raise); border: 1px solid var(--line); overflow: visible; }
+      .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: var(--ember); transition: width .4s ease; }
+      .m-week .fill { background: linear-gradient(90deg, var(--frost), var(--ember)); }
+      .tick { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); opacity: .55; transform: translateX(-1px); border-radius: 1px; }
+
+      /* Banners */
+      .banners { display: grid; gap: 10px; }
+      .banners:empty { display: none; }
+      .banner { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--ember); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 6px; }
+      .b-title { margin: 0; font-weight: 600; }
+      .b-body { margin: 0; color: var(--muted); font-size: 14px; }
+      .b-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+      /* Days */
+      .days { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+      .chip { min-height: 44px; min-width: 64px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-weight: 500; flex: none; }
+      .chip[aria-pressed='true'] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+      .logging-for { margin: -4px 0 0; color: var(--muted); font-size: 14px; }
+      .logging-for.past { color: var(--warn); font-weight: 600; }
+
+      /* Habits */
+      .habits { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      .habit { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 6px; display: grid; gap: 6px; }
+      .habit[data-state='fulfilled'] { border-color: rgba(226, 115, 63, .5); background: linear-gradient(0deg, var(--ember-soft), var(--ember-soft)), var(--surface); }
+      .line { display: flex; align-items: stretch; gap: 6px; }
+      .tap, .head { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 10px; border-radius: 9px; background: transparent; border: 0; text-align: left; }
+      .tap:hover { background: var(--raise); }
+      .text { display: grid; min-width: 0; }
+      .name { font-weight: 600; font-size: 17px; overflow-wrap: anywhere; }
+      .meta { font-size: 13px; color: var(--muted); }
+      .value { margin-left: auto; font: 500 15px var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .more { width: 48px; min-height: 48px; border-radius: 9px; border: 0; background: transparent; color: var(--muted); letter-spacing: .1em; }
+      .more:hover, .more[aria-expanded='true'] { background: var(--raise); color: var(--ink); }
+      .controls { display: grid; grid-template-columns: 48px minmax(0, 1fr) 48px auto; gap: 6px; padding: 0 4px 4px; }
+      .step, .full { min-height: 48px; border-radius: 9px; border: 1px solid var(--line); background: var(--raise); font-size: 20px; font-weight: 600; }
+      .full { font-size: 15px; padding: 0 14px; }
+      .amount { min-height: 48px; width: 100%; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); text-align: center; font: 500 18px var(--f-mono); }
+      .skips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 4px 6px; }
+      .skip { min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line); background: transparent; color: var(--ink); }
+      .skip.clear { color: var(--muted); }
+      .glyph-slot { flex: none; width: 30px; height: 30px; }
+      .glyph { width: 30px; height: 30px; }
+      .glyph .ring { stroke: var(--muted); }
+      .glyph .dim { stroke: var(--dim); }
+      .glyph .fill { fill: var(--ember); }
+      .glyph .mark { stroke: var(--ember-ink); }
+      .g-skipped .ring { stroke: var(--frost); }
+      .later-wrap { display: grid; gap: 8px; }
+      .sub { font: 600 13px var(--f-body); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+      .later .habit { opacity: .8; }
+      .empty { color: var(--muted); padding: 16px; }
+
+      /* Setup and welcome */
+      .setup, .welcome { display: grid; gap: 16px; padding-block: 16px; }
+      .setup-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .setup h1, .welcome h1 { font: 600 28px/1.15 var(--f-display); }
+      .setup-body { display: grid; gap: 16px; }
+      .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 12px; min-width: 0; scroll-margin-top: 80px; }
+      .card h2 { font: 600 20px/1.2 var(--f-display); }
+      .card h3 { font-size: 15px; }
+      .intro { margin: 0; color: var(--muted); }
+      .hint { margin: 0; color: var(--muted); font-size: 13px; }
+      .field { display: grid; gap: 6px; min-width: 0; }
+      .field > label, .field > .label { font-size: 13px; font-weight: 600; color: var(--muted); }
+      input[type='text'], input[type='number'], input[type='date'], input[type='time'], select, textarea { min-height: 48px; width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line); background: var(--bg); }
+      textarea { resize: vertical; }
+      .pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+      .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+      .check input { width: 22px; height: 22px; accent-color: var(--ember); }
+      .habit-form { border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; margin: 0; min-width: 0; }
+      .habit-form legend { font-weight: 600; padding: 0 6px; }
+      .daybox { display: flex; flex-wrap: wrap; gap: 6px; }
+      .day { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 22px; }
+      .day input { accent-color: var(--ember); width: 18px; height: 18px; }
+      .setup-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+      .setup-habit { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+      .setup-habit.archived { opacity: .7; }
+      .sh-text { display: grid; }
+      details summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; }
+      .danger-zone { display: grid; gap: 8px; }
+      .danger-zone label { font-size: 14px; color: var(--muted); }
+      .log { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+      .dry-run { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 4px; }
+      .dry-run p { margin: 0; }
+      .bad { color: var(--bad); }
+      .toast { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); max-width: 560px; margin: 0 auto; background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; z-index: 10; }
+      .toast.bad { border-color: var(--bad); }
+      .sync-line { margin: 0; font-weight: 600; }
+      .conflict { display: grid; gap: 6px; padding-block: 6px; }
+      .boot { color: var(--muted); padding-block: 40px; text-align: center; }
     </style>
   </head>
   <body>
-    <main>
-      <div class="mark"><span class="ember" aria-hidden="true"></span><h1>Ascent</h1></div>
-      <p class="lede">Nothing to log yet. This first build checks that your device can run what comes next: the camp, the story and your synced record.</p>
-      <section aria-labelledby="checks-title">
-        <h2 id="checks-title">This device</h2>
-        <ul id="checks" aria-live="polite"></ul>
-      </section>
-      <div class="meta"><span id="today"></span><span id="build"></span></div>
-      <footer>Milestone M1 of 16. Next: the feel test, a 60-second scene at a cold camp.</footer>
-    </main>
-    <script type="module" src="/src/shell/main.ts"></script>
+    <div id="app"><p class="boot">Lighting the fire…</p></div>
+    <noscript><p>Ascent needs JavaScript to run.</p></noscript>
+    <script type="module">
+      import { boot } from '/src/shell/app.ts';
+      boot(document.getElementById('app')).catch((e) => {
+        document.getElementById('app').textContent = 'Ascent could not start: ' + (e && e.message ? e.message : e);
+      });
+    </script>
   </body>
 </html>
