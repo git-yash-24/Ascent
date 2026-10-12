@@ -56,6 +56,11 @@ export function fold(remote: RemoteDocs, now: number): Folded {
     if (r.ok) s.seen = r.value;
     else problems.push({ doc: 'seen', error: r.error });
   }
+  if (single.notes !== undefined) {
+    const r = load('notes', single.notes);
+    if (r.ok) s.notes = r.value;
+    else problems.push({ doc: 'notes', error: r.error });
+  }
   if (single.corrections !== undefined) {
     const r = load('corrections', single.corrections);
     if (r.ok) s.corrections = r.value;

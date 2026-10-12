@@ -4,14 +4,15 @@
  */
 import { z } from 'zod';
 import { isDateKey, weekStart } from './date';
-import type { CorrectionsDoc, Entry, HabitsDoc, MonthLog, Profile, SeenDoc } from './types';
+import type { CorrectionsDoc, Entry, HabitsDoc, MonthLog, NotesDoc, Profile, SeenDoc } from './types';
 
 export const CURRENT_SCHEMA = {
   profile: 2,
-  habits: 2,
+  habits: 3,
   log: 1,
   seen: 1,
   corrections: 1,
+  notes: 1,
 } as const;
 
 export type DocKind = keyof typeof CURRENT_SCHEMA;
@@ -64,6 +65,10 @@ const habit = z
     createdOn: dateKey,
     archivedFrom: dateKey.optional(),
     system: z.literal('water').optional(),
+    tag: z
+      .object({ family: z.string().regex(/^[a-z-]{2,24}$/), group: z.string().regex(/^[a-z0-9-]{2,40}$/) })
+      .strict()
+      .optional(),
     versions: z.array(habitVersion).min(1).max(500),
   })
   .strict()
@@ -131,6 +136,15 @@ export const seenSchema = z
   })
   .strict();
 
+export const NOTE_MAX = 1000;
+
+export const notesSchema = z
+  .object({
+    schema: z.literal(CURRENT_SCHEMA.notes),
+    entries: z.record(dateKey, z.string().max(NOTE_MAX)),
+  })
+  .strict();
+
 export const correctionsSchema = z
   .object({
     schema: z.literal(CURRENT_SCHEMA.corrections),
@@ -166,6 +180,7 @@ export const parse = {
   habits: (x: unknown): ParseResult<HabitsDoc> => wrap(habitsSchema as z.ZodType<HabitsDoc, z.ZodTypeDef, unknown>, x),
   log: (x: unknown): ParseResult<MonthLog> => wrap(monthLogSchema as z.ZodType<MonthLog, z.ZodTypeDef, unknown>, x),
   seen: (x: unknown): ParseResult<SeenDoc> => wrap(seenSchema as z.ZodType<SeenDoc, z.ZodTypeDef, unknown>, x),
+  notes: (x: unknown): ParseResult<NotesDoc> => wrap(notesSchema as z.ZodType<NotesDoc, z.ZodTypeDef, unknown>, x),
   corrections: (x: unknown): ParseResult<CorrectionsDoc> =>
     wrap(correctionsSchema as z.ZodType<CorrectionsDoc, z.ZodTypeDef, unknown>, x),
   entry: (x: unknown): ParseResult<Entry> => wrap(entrySchema as z.ZodType<Entry, z.ZodTypeDef, unknown>, x),

@@ -92,7 +92,7 @@ function pushVersion(h: Habit, v: HabitVersion): Habit {
 /** Create: takes effect today; past days are never scheduled retroactively (H18). */
 export function createHabit(
   doc: HabitsDoc,
-  input: { id: HabitId; name: string; category: HabitCategory; today: DateKey; definition: Definition },
+  input: { id: HabitId; name: string; category: HabitCategory; today: DateKey; definition: Definition; tag?: { family: string; group: string } },
 ): HabitsDoc {
   if (doc.habits.some((h) => h.id === input.id)) throw new Error(`habit ${input.id} exists`);
   const h: Habit = {
@@ -102,6 +102,7 @@ export function createHabit(
     createdOn: input.today,
     versions: [toVersion(input.today, input.definition)],
   };
+  if (input.tag) h.tag = { ...input.tag };
   return { ...doc, habits: [...doc.habits, h] };
 }
 
@@ -109,6 +110,11 @@ export function createHabit(
 export function renameHabit(doc: HabitsDoc, id: HabitId, name: string, category?: HabitCategory): HabitsDoc {
   const h = find(doc, id);
   return replaceHabit(doc, { ...h, name, category: category ?? h.category });
+}
+
+/** The coloured tag applies everywhere, including history (like the name). */
+export function retagHabit(doc: HabitsDoc, id: HabitId, tag: { family: string; group: string }): HabitsDoc {
+  return replaceHabit(doc, { ...find(doc, id), tag: { ...tag } });
 }
 
 /** Type, target, minimum or schedule: a new version effective today (H15, H16). */

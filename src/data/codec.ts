@@ -26,7 +26,7 @@ export function decodeEntry(x: unknown, dev: string): Entry | null {
   return e;
 }
 
-const SINGLE = new Set(['profile', 'habits', 'seen', 'corrections']);
+const SINGLE = new Set(['profile', 'habits', 'seen', 'corrections', 'notes']);
 const LOG_ID = /^log-(\d{4}-\d{2})~([A-Za-z0-9_-]{1,64})$/;
 
 export function logDocId(month: string, dev: string): string {
@@ -34,7 +34,7 @@ export function logDocId(month: string, dev: string): string {
 }
 
 export type ParsedDocId =
-  | { kind: 'single'; name: 'profile' | 'habits' | 'seen' | 'corrections' }
+  | { kind: 'single'; name: 'profile' | 'habits' | 'seen' | 'corrections' | 'notes' }
   | { kind: 'log'; month: string; dev: string }
   | { kind: 'unknown' };
 
