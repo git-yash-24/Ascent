@@ -14,7 +14,9 @@ const server = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
   res.end(html);
 }).listen(0);
-const url = `http://127.0.0.1:${server.address().port}/`;
+const base = `http://127.0.0.1:${server.address().port}/`;
+// Most tests run on the painted sky: software WebGL is too slow to share the main thread.
+const url = `${base}?world=off`;
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium' });
 let failures = 0;
@@ -42,9 +44,17 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+/** Begin, then open the plain checklist (#list): the M8 contract still holds there. */
 async function start(page) {
+  await startGame(page);
+  await page.evaluate(() => (location.hash = '#list'));
+  await page.locator('.habit').first().waitFor();
+}
+
+/** Begin and stay on the game screen. */
+async function startGame(page) {
   await page.getByRole('button', { name: 'Begin the climb' }).click();
-  await page.getByRole('checkbox', { name: /Review mistakes/ }).waitFor();
+  await page.locator('.gchip').first().waitFor();
 }
 
 await test('first launch to a working checklist', async (page) => {
@@ -75,7 +85,13 @@ await test('X16: keyboard only: log both, change a value, reach Setup and back',
     if ((await page.evaluate(() => document.activeElement?.textContent)) === 'Begin the climb') break;
   }
   await page.keyboard.press('Enter');
-  await page.getByRole('checkbox', { name: /Review mistakes/ }).waitFor();
+  await page.locator('.gchip').first().waitFor();
+  // The skip link opens the plain checklist.
+  const first = await page.evaluate(() => document.querySelector('a[href], button, input, textarea, select')?.textContent);
+  assert(first === 'Open the plain checklist', `first control is ${first}`);
+  await page.locator('.skip-link').focus();
+  await page.keyboard.press('Enter');
+  await page.locator('.habit').first().waitFor();
   const focusOn = async (pred, label) => {
     for (let i = 0; i < 60; i++) {
       await page.keyboard.press('Tab');
@@ -106,14 +122,15 @@ await test('X16: keyboard only: log both, change a value, reach Setup and back',
   await page.keyboard.press('Enter');
   await page.getByRole('heading', { name: 'Setup', level: 1 }).waitFor();
   await page.keyboard.press('Escape');
-  await page.getByRole('checkbox', { name: /Review mistakes/ }).waitFor();
+  await page.locator('.habit').first().waitFor();
+  assert((await page.evaluate(() => location.hash)) === '#list', 'Escape did not return to the checklist');
 });
 
 await test('X17: every control has an accessible name; state is not colour alone', async (page) => {
   await start(page);
-  for (const hash of ['#today', '#setup']) {
+  for (const hash of ['#list', '#camp', '#today', '#week', '#month', '#year', '#setup']) {
     await page.evaluate((h) => (location.hash = h), hash);
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(150);
     const unnamed = await page.evaluate(() => {
       const bad = [];
       for (const el of document.querySelectorAll('button, input, select, textarea, a[href]')) {
@@ -125,7 +142,7 @@ await test('X17: every control has an accessible name; state is not colour alone
     });
     assert(unnamed.length === 0, `unnamed on ${hash}: ${unnamed.join(' | ')}`);
   }
-  await page.evaluate(() => (location.hash = '#today'));
+  await page.evaluate(() => (location.hash = '#list'));
   await page.getByRole('checkbox', { name: /Review mistakes/ }).tap();
   const shape = await page.locator('.habit[data-state="fulfilled"] svg.g-fulfilled path').count();
   assert(shape === 1, 'fulfilled glyph has no tick shape');
@@ -210,16 +227,136 @@ await test('Setup: add, edit, archive, restore, correct the record', async (page
 
 await test('phone width: nothing scrolls sideways', async (page) => {
   await start(page);
-  for (const hash of ['#today', '#setup']) {
+  for (const hash of ['#list', '#camp', '#today', '#week', '#month', '#year', '#setup']) {
     await page.evaluate((h) => (location.hash = h), hash);
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(150);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     assert(over <= 0, `${hash} overflows by ${over}px`);
   }
+  await page.evaluate(() => (location.hash = '#list'));
+  await page.screenshot({ path: 'dist/e2e-list.png', fullPage: true });
   await page.evaluate(() => (location.hash = '#today'));
-  await page.screenshot({ path: 'dist/e2e-today.png', fullPage: true });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: 'dist/e2e-today.png' });
   await page.evaluate(() => (location.hash = '#setup'));
   await page.screenshot({ path: 'dist/e2e-setup.png', fullPage: true });
+});
+
+// ---------- M9: the game screen ----------
+
+const chip = (page, name) => page.locator('.gchip', { hasText: name });
+async function hold(page, loc, ms) {
+  const b = await loc.boundingBox();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(ms);
+  await page.mouse.up();
+}
+
+await test('game: lands on Today with the world above and chips below', async (page) => {
+  await startGame(page);
+  assert((await page.evaluate(() => location.hash)) === '#today', 'not on #today');
+  const vh = await page.evaluate(() => window.innerHeight);
+  const world = await page.evaluate(() => Math.max(...[...document.querySelectorAll('canvas.world, .world-fallback')].map((e) => e.getBoundingClientRect().height)));
+  assert(world / vh > 0.6, `world takes ${world / vh}`);
+  const sheetTop = (await page.locator('#s-today .sheet').boundingBox()).y;
+  assert(sheetTop / vh > 0.55 && sheetTop / vh < 0.65, `sheet starts at ${sheetTop / vh}`);
+  assert((await page.locator('#s-today .gchip').count()) === 2, 'two chips expected');
+});
+
+await test('game: tap is done, tap again is empty; under 100 ms to stored', async (page) => {
+  await startGame(page);
+  await chip(page, 'Review mistakes').tap();
+  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'tap did not mark done');
+  await chip(page, 'Qbank').tap();
+  assert((await chip(page, 'Qbank').getAttribute('data-state')) === 'fulfilled', 'amount tap did not fill to target');
+  assert((await chip(page, 'Qbank').textContent()).includes('50/50'), 'amount not shown');
+  await chip(page, 'Review mistakes').tap();
+  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'false', 'second tap did not empty');
+  const ms = await page.evaluate(() => window.__ascent.tapToStored);
+  assert(ms.length >= 3 && Math.max(...ms) < 100, `tap to stored: ${ms.map((x) => x.toFixed(1)).join(', ')} ms`);
+});
+
+await test('game: a press under 0.7 s is a tap; holding opens attempted and rest', async (page) => {
+  await startGame(page);
+  await hold(page, chip(page, 'Review mistakes'), 300);
+  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'short press was not a tap');
+  assert(!(await page.locator('dialog.opts[open]').count()), 'short press opened the menu');
+  await hold(page, chip(page, 'Review mistakes'), 850);
+  await page.locator('dialog.opts[open]').waitFor();
+  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'hold also toggled');
+  await page.getByRole('button', { name: 'Sick', exact: true }).click();
+  assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'skipped', 'sick not saved');
+  assert((await chip(page, 'Review mistakes').textContent()).includes('Sick'), 'skip reason not shown');
+  // Attempted with an amount.
+  await hold(page, chip(page, 'Qbank'), 850);
+  await page.locator('dialog.opts .opts-amount').fill('20');
+  await page.getByRole('button', { name: 'Save amount' }).click();
+  assert((await chip(page, 'Qbank').getAttribute('data-state')) === 'attempted', 'amount below the hold point is attempted');
+  assert((await chip(page, 'Qbank').textContent()).includes('20/50'), 'amount not shown');
+  // Attempted on a yes-or-no habit.
+  await hold(page, chip(page, 'Review mistakes'), 850);
+  await page.getByRole('button', { name: 'Attempted' }).click();
+  assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'attempted', 'binary attempted not saved');
+});
+
+await test('game: keyboard taps with Enter, opens options with Shift+F10, Escape returns focus', async (page) => {
+  await startGame(page);
+  await chip(page, 'Review mistakes').focus();
+  await page.keyboard.press('Enter');
+  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'Enter did not tap');
+  await page.keyboard.press('Shift+F10');
+  await page.locator('dialog.opts[open]').waitFor();
+  await page.keyboard.press('Escape');
+  assert(!(await page.locator('dialog.opts[open]').count()), 'Escape did not close');
+  assert((await page.evaluate(() => document.activeElement?.classList.contains('gchip'))), 'focus not returned to the chip');
+});
+
+await test('game: screens left to right are Camp, Today, Week, Month, Year', async (page) => {
+  await startGame(page);
+  const labels = await page.locator('.screen-btn').allTextContents();
+  assert(labels.join(',') === 'Camp,Today,Week,Month,Year', `order ${labels}`);
+  for (const [name, hash] of [['Week', '#week'], ['Month', '#month'], ['Year', '#year'], ['Camp', '#camp']]) {
+    await page.getByRole('button', { name, exact: true }).click();
+    await page.waitForFunction((h) => location.hash === h, hash);
+  }
+  // Swipe right to left from Camp lands on Today.
+  const w = await page.evaluate(() => window.innerWidth);
+  await page.locator('.pager').evaluate((p, x) => p.scrollTo({ left: x }), w);
+  await page.waitForFunction(() => location.hash === '#today');
+  assert(await page.locator('#s-today .gchip').first().isVisible(), 'Today not shown after swipe');
+});
+
+await test('game: base camp journal saves and survives a reload; leagues follow tags', async (page) => {
+  await startGame(page);
+  await chip(page, 'Qbank').tap();
+  await page.getByRole('button', { name: 'Camp', exact: true }).click();
+  await page.getByRole('tab', { name: 'Journal' }).click();
+  await page.getByLabel('Today’s note').fill('Did the qbank before lunch.');
+  await page.getByRole('button', { name: 'Save note' }).click();
+  await page.waitForTimeout(150);
+  await page.reload();
+  await page.locator('.gchip').first().waitFor();
+  assert((await page.evaluate(() => location.hash)) === '#camp', 'reload did not keep the screen');
+  await page.getByRole('tab', { name: 'Journal' }).click();
+  assert((await page.getByLabel('Today’s note').inputValue()) === 'Did the qbank before lunch.', 'note lost');
+  await page.getByRole('tab', { name: 'Leagues' }).click();
+  assert(await page.getByRole('article', { name: 'Medical exams league' }).isVisible(), 'no league for the tag group');
+  await page.getByRole('tab', { name: 'Trophies' }).click();
+  assert((await page.locator('.trophy.on').count()) >= 1, 'no trophy for showing up');
+});
+
+await test('game: closing the day plays the reward and says so (with the world)', async (page) => {
+  await page.goto(base);
+  await startGame(page);
+  assert(await page.locator('canvas.world').isVisible(), 'the world did not start');
+  // Keyboard taps: software WebGL stalls the main thread long enough to turn a touch into a hold.
+  for (const name of ['Review mistakes', 'Qbank']) {
+    await chip(page, name).focus();
+    await page.keyboard.press('Enter');
+  }
+  await page.waitForFunction(() => document.querySelector('.game > .sr-only')?.textContent?.includes('Camp is made'), null, { timeout: 60_000, polling: 500 });
+  assert((await page.locator('#s-today .coach').textContent()).includes('Camp is made'), 'caption did not change');
 });
 
 await browser.close();

@@ -4,15 +4,18 @@
  *   Measurable   done or not, a number (with its unit), minutes, or something to avoid
  *   Achievable   how many; the hold point is set to half automatically
  *   Time-bound   how often (every day, set days, times a week) and an optional set time
- * Which of Ari's chores it becomes is chosen by the story, never asked.
+ * Which of Ari's chores it becomes is chosen by the story, never asked. Its coloured group is
+ * suggested from the name as it is typed and can be changed in one step.
  */
 import type { HabitVersion, Schedule } from '../../core/model/types';
 import type { Definition } from '../../core/habits/versions';
 import { h } from '../dom';
+import { FAMILIES, family, suggestTag } from '../../core/tags';
 
 export interface HabitDraft {
   name: string;
   definition: Definition;
+  tag: { family: string; group: string };
 }
 
 const DAYS = [
@@ -39,6 +42,9 @@ export class HabitForm {
   private unit: HTMLInputElement;
   private n: HTMLInputElement;
   private time: HTMLInputElement;
+  private tag: HTMLSelectElement;
+  private swatch: HTMLElement;
+  private tagTouched = false;
   private days: HTMLInputElement[] = [];
   private amountRow: HTMLElement;
   private unitField: HTMLElement;
@@ -49,7 +55,10 @@ export class HabitForm {
   /** Kept from an edited habit: the hold point is not asked, but an existing one is kept. */
   private keptMinimum: { target: number; minimum: number } | null = null;
 
-  constructor(legend: string, initial?: { name: string; version: Pick<HabitVersion, 'type' | 'target' | 'minimum' | 'unit' | 'schedule' | 'time'> }) {
+  constructor(
+    legend: string,
+    initial?: { name: string; version: Pick<HabitVersion, 'type' | 'target' | 'minimum' | 'unit' | 'schedule' | 'time'>; tag?: { family: string; group: string } },
+  ) {
     const p = `hf${++seq}`;
     const radios = <K extends string>(name: string, label: string, opts: Array<[K, string]>): [HTMLElement, Record<K, HTMLInputElement>] => {
       const map = {} as Record<K, HTMLInputElement>;
@@ -85,6 +94,23 @@ export class HabitForm {
     this.n = h('input', { id: `${p}-n`, type: 'number', min: '1', max: '7', step: '1', inputmode: 'numeric' });
     this.time = h('input', { id: `${p}-time`, type: 'time' });
     this.holdNote = h('p', { class: 'hint' });
+    this.tag = h('select', { id: `${p}-tag` });
+    for (const f of FAMILIES) {
+      const og = h('optgroup', { label: f.name });
+      for (const g of f.groups) og.append(h('option', { value: `${f.id}/${g.id}`, text: `${g.name} · ${f.name}` }));
+      this.tag.append(og);
+    }
+    this.swatch = h('span', { class: 'tag-dot big', 'aria-hidden': 'true' });
+    this.tag.addEventListener('change', () => {
+      this.tagTouched = true;
+      this.paintTag();
+    });
+    this.name.addEventListener('input', () => {
+      if (this.tagTouched) return;
+      const t = suggestTag(this.name.value);
+      this.tag.value = `${t.family}/${t.group}`;
+      this.paintTag();
+    });
     this.targetLabel = h('label', { for: `${p}-target`, text: 'How many each day?' });
 
     const dayBoxes = h('div', { class: 'daybox', role: 'group', 'aria-labelledby': `${p}-dayslabel` });
@@ -104,6 +130,7 @@ export class HabitForm {
       { class: 'habit-form' },
       h('legend', { text: legend }),
       h('div', { class: 'field' }, h('label', { for: `${p}-name`, text: 'What will you do?' }), this.name),
+      h('div', { class: 'field' }, h('label', { for: `${p}-tag`, text: 'Group (its colour)' }), h('div', { class: 'tag-pick' }, this.swatch, this.tag)),
       measureField,
       this.amountRow,
       oftenField,
@@ -129,12 +156,22 @@ export class HabitForm {
       if (s.kind === 'weekdays') for (const b of this.days) b.checked = s.days.includes(Number(b.value));
       this.n.value = s.kind === 'perWeek' || s.kind === 'perMonth' ? String(s.n) : '3';
       this.time.value = v.time ?? '';
+      const t = initial.tag ?? suggestTag(initial.name);
+      this.tag.value = `${t.family}/${t.group}`;
+      this.tagTouched = initial.tag !== undefined;
     } else {
+      const t = suggestTag('');
+      this.tag.value = `${t.family}/${t.group}`;
       measure.binary.checked = true;
       (often.daily as HTMLInputElement).checked = true;
       this.n.value = '3';
     }
     this.sync();
+    this.paintTag();
+  }
+
+  private paintTag(): void {
+    this.swatch.style.background = family(this.tag.value.split('/')[0] ?? '').color;
   }
 
   private measureValue(): Measure {
@@ -196,7 +233,8 @@ export class HabitForm {
       if (type === 'numeric') definition.unit = this.unit.value.trim();
     }
     if (this.time.value) definition.time = this.time.value;
-    return { ok: true, draft: { name, definition } };
+    const [fam = 'mind', grp = 'focus'] = this.tag.value.split('/');
+    return { ok: true, draft: { name, definition, tag: { family: fam, group: grp } } };
   }
 }
 
