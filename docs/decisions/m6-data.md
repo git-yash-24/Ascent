@@ -36,9 +36,17 @@ on three devices is about 185 of the database's 5,000.
 
 ## The three platform questions
 
-Answered on Xander's phone with the sync probe artifact (Ascent Sync Probe). Results to be
-recorded here.
+Answered on Xander's phone (Samsung SM-S928B, Android 16, Claude app webview) with the sync
+probe artifact, 2026-10-13.
 
-1. Merge write confirmation time on mobile data: pending.
-2. Offline journal entry survives a restart and syncs: pending.
-3. Browser storage persists across Claude app restarts on Android: pending.
+| Question | Result |
+| --- | --- |
+| 1. Merge write confirmation time | 7 ticks: 2897, 1947, 1945, 1940, 1845, 1707, 1912 ms; median 1.94 s. Each covers the write, the read-back and a full re-read of the store. The tap itself is on screen and in the journal within the same frame, so the 50 ms and 100 ms budgets are unaffected; "Saving" shows for about 2 s. |
+| 2. Offline journal entry survives a restart and syncs | Pass: 1 change made in airplane mode survived a full close of the app and synced on reopening. |
+| 3. Browser storage persists across Claude app restarts on Android | Pass: same device id across 3 opens with force-closes between. |
+
+M6 acceptance ("offline test passes or is documented as unsupported"): passed.
+
+Follow-up for M8: the re-read after each flush costs most of the 2 s. Once the checklist exists,
+measure whether confirming by read-back alone, with the full re-read deferred, shortens
+"Saving" without weakening the guarantee.
