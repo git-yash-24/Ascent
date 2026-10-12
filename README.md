@@ -31,4 +31,9 @@ Rule: nothing in `src/core` or `src/data` imports from the presentation layers.
 
 ## Milestones
 
-M1 scaffold (this commit). Next: M2 and M3, the feel test in two styles.
+- M1: scaffold, capability check page.
+- M2, M3: feel tests in low-poly 3D and silhouette theatre (`prototypes/`).
+- M4, gate 1: 3D chosen for the MVP; Pine as the storytelling reference (`docs/decisions/gate-1.md`).
+- M5: core engine: model, schemas, migrations, habit engine, `derive` (`docs/decisions/m5-engine.md`).
+
+Next: M6, the store interface, adapters, local journal and sync status.
