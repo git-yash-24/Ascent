@@ -38,4 +38,6 @@ Rule: nothing in `src/core` or `src/data` imports from the presentation layers.
 
 - M6: store, memory and artifact database adapters, local journal, sync status; sync probe page (`docs/decisions/m6-data.md`).
 
-Next: M7, export, import with dry run, and the weekly backup prompt.
+- M7: export (JSON and CSV), import with dry run and a safety export first, weekly backup prompt (`docs/decisions/m7-backup.md`).
+
+Next: M8, the accessible checklist and Setup, working with no world at all.
