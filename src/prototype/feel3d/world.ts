@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fbm, mulberry32 } from './noise';
+import { fbm, mulberry32 } from '../shared/noise';
 
 /** Where the route runs: a gentle S through the foothills, rising toward the mountain (-z). */
 export function pathX(z: number): number {
