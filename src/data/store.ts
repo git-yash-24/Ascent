@@ -17,6 +17,7 @@ import { parse } from '../core/model/schemas';
 import { emptySnapshot } from '../core/model/snapshot';
 import type { DateKey, Entry, HabitId, Snapshot } from '../core/model/types';
 import { PermanentBackendError, type Backend, type DocKindSingle } from './backend';
+import { replaceWrites } from './backup/backup';
 import { fold, type Conflict, type Problem } from './sync/fold';
 import { Journal, type JournalOp, type KV } from './sync/journal';
 
@@ -145,6 +146,23 @@ export class SyncedStore {
     const r = parse[doc](body);
     if (!r.ok) throw new TypeError(`${doc}: ${r.error}`);
     this.journal.append({ id: opId(this.dev, this.now()), kind: 'doc', doc, body: r.value, at: this.now() });
+    this.rebuild();
+    void this.flush();
+  }
+
+  /**
+   * Replace everything with an imported snapshot (after the caller has shown the dry run and
+   * exported the current data). Goes through the journal like any other write.
+   */
+  replaceAll(incoming: Snapshot): void {
+    const at = this.now();
+    for (const w of replaceWrites(this.state.snapshot, incoming, at, this.dev)) {
+      this.journal.append({ id: opId(this.dev, at), kind: 'entry', date: w.date, habit: w.habit, e: w.e });
+    }
+    if (incoming.profile) this.journal.append({ id: opId(this.dev, at), kind: 'doc', doc: 'profile', body: incoming.profile, at });
+    for (const doc of ['habits', 'seen', 'corrections'] as const) {
+      this.journal.append({ id: opId(this.dev, at), kind: 'doc', doc, body: incoming[doc], at });
+    }
     this.rebuild();
     void this.flush();
   }
