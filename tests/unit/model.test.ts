@@ -38,8 +38,8 @@ describe('schemas', () => {
       { ...R(D1), versions: [{ ...R(D1).versions[0], target: 2 }] },
       { ...h, versions: [h.versions[0], h.versions[0]] },
     ];
-    for (const b of bad) expect(parse.habits({ schema: 1, habits: [b] }).ok).toBe(false);
-    expect(parse.habits({ schema: 1, habits: [h, h] }).ok).toBe(false);
+    for (const b of bad) expect(parse.habits({ schema: 2, habits: [b] }).ok).toBe(false);
+    expect(parse.habits({ schema: 2, habits: [h, h] }).ok).toBe(false);
   });
 
   it('rejects a log keyed by an impossible date', () => {

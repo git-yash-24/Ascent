@@ -17,7 +17,9 @@ import type {
   RecordMark,
   SkipReason,
   Snapshot,
+  Water,
 } from './model/types';
+import { versionOn } from './habits/versions';
 import { computeClimb } from './habits/weekly';
 import { habitChain } from './habits/chains';
 import { isHeld } from './habits/state';
@@ -79,7 +81,7 @@ export function derive(s: Snapshot, now: Now): Derived {
       tl.forEach((hd, i) => {
         const date = order[offset + i] as DateKey;
         (days[date] as DayDerived).states[h.id] = hd.state;
-        if (hd.state === 'fulfilled') fulfilled++;
+        if (hd.state === 'fulfilled' && !h.system) fulfilled++;
       });
     }
     for (let i = 0; i < order.length; i++) {
@@ -89,7 +91,8 @@ export function derive(s: Snapshot, now: Now): Derived {
         const tl = timelines.get(h.id);
         if (!tl) continue;
         const hd = tl[diffDays(h.createdOn, date)];
-        if (hd && hd.counted) counted.push(hd);
+        // Built-in habits (water) have their own bar; they never decide a story day.
+        if (hd && hd.counted && !h.system) counted.push(hd);
       }
       const isEnded = date !== today || now.ended;
       const d = days[date] as DayDerived;
@@ -135,6 +138,7 @@ export function derive(s: Snapshot, now: Now): Derived {
     condition: { warmth, fatigue, resolveTier },
     records,
     lifetime: { daysShownUp, fulfilled },
+    water: waterOf(s, today, chains),
     climb: computeClimb({
       habits,
       timelines,
@@ -144,6 +148,15 @@ export function derive(s: Snapshot, now: Now): Derived {
       steep: s.profile?.weekly.steep ?? [],
     }),
   };
+}
+
+function waterOf(s: Snapshot, today: DateKey, chains: Derived['chains']): Water | null {
+  const h = s.habits.habits.find((x) => x.system === 'water' && !x.archivedFrom);
+  if (!h) return null;
+  const v = versionOn(h, today);
+  if (!v || v.archived) return null;
+  const e = entryOn(s, today, h.id);
+  return { habit: h.id, today: e?.v ?? 0, target: v.target, lastAt: e ? e.at : null, streak: chains[h.id]?.current ?? 0 };
 }
 
 /**

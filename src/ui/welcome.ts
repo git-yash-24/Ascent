@@ -7,12 +7,10 @@ export function welcome(app: Controller): HTMLElement {
   const identity = h('textarea', { id: 'w-identity', rows: '2', maxlength: '200', placeholder: 'Someone who shows up, even on the cold days.' });
   const first = new HabitForm('First habit', {
     name: 'Qbank',
-    category: 'test',
     version: { type: 'numeric', target: 50, minimum: 25, unit: 'questions', schedule: { kind: 'daily' } },
   });
   const second = new HabitForm('Second habit', {
     name: 'Review mistakes',
-    category: 'repair',
     version: { type: 'binary', target: 1, minimum: 1, schedule: { kind: 'daily' } },
   });
   const status = h('p', { class: 'hint', role: 'status' });
@@ -39,7 +37,7 @@ export function welcome(app: Controller): HTMLElement {
     h('div', { class: 'field' }, h('label', { for: 'w-identity', text: 'Who you are becoming (optional)' }), identity),
     first.el,
     second.el,
-    h('p', { class: 'hint', text: 'A day ends at 4:00 in the morning. Change it in Setup.' }),
+    h('p', { class: 'hint', text: 'Water is built in for everyone: 8 glasses a day, on its own bar. A day ends at 4:00 in the morning. Change either in Setup.' }),
     h('div', { class: 'row-actions' }, begin),
     status,
   );

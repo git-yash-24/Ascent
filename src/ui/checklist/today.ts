@@ -61,6 +61,8 @@ export class TodayView {
   private banners: HTMLElement;
   private loggingFor: HTMLElement;
   private announce: HTMLElement;
+  private water: HTMLElement;
+  private last: View | null = null;
 
   constructor(private readonly app: Controller) {
     this.summary = h('section', { class: 'summary', 'aria-label': 'Where you stand' });
@@ -71,11 +73,18 @@ export class TodayView {
     this.later = h('ul', { class: 'habits later', 'aria-label': 'Not due' });
     this.laterWrap = h('section', { class: 'later-wrap' }, h('h2', { class: 'sub', text: 'Not due' }), this.later);
     this.announce = h('p', { class: 'sr-only', 'aria-live': 'polite' });
-    this.root = h('main', { class: 'today', id: 'today' }, this.summary, this.banners, this.days, this.loggingFor, this.list, this.laterWrap, this.announce);
+    this.water = h('section', { class: 'water', 'aria-labelledby': 'water-h' });
+    this.root = h('main', { class: 'today', id: 'today' }, this.summary, this.banners, this.water, this.days, this.loggingFor, this.list, this.laterWrap, this.announce);
+    // The reminder line ages by the minute even when nothing is logged.
+    setInterval(() => {
+      if (this.last) this.renderWater(this.last);
+    }, 60_000);
   }
 
   render(v: View): void {
+    this.last = v;
     this.renderSummary(v);
+    this.renderWater(v);
     this.renderBanners(v);
     this.renderDays(v);
     this.renderRows(v);
@@ -120,6 +129,50 @@ export class TodayView {
         'week',
       ),
     );
+  }
+
+  private renderWater(v: View): void {
+    const w = v.derived.water;
+    this.water.hidden = !w;
+    if (!w) return;
+    const full = w.today >= w.target;
+    const since = w.lastAt === null ? null : Math.floor((Date.now() - w.lastAt) / 60_000);
+    // In-app reminder: two hours without a glass, or none yet by nine in the morning.
+    const due = !full && (since === null ? nowHHMM() >= '09:00' : since >= WATER_EVERY_MIN);
+    this.water.dataset.due = due ? 'true' : 'false';
+    const cells = h('div', { class: 'cells', 'aria-hidden': 'true' });
+    for (let i = 0; i < w.target; i++) cells.append(h('span', { class: i < w.today ? 'cell on' : 'cell' }));
+    const line = full
+      ? `Flask full${w.streak > 1 ? ` · ${w.streak} days in a row` : ''}`
+      : due
+        ? since === null
+          ? 'Time for water. Start the flask.'
+          : `Time for water · last glass ${agoText(since)}`
+        : since === null
+          ? 'No glass yet today'
+          : `Last glass ${agoText(since)}`;
+    const add = h('button', { class: 'btn primary glass', 'aria-label': `Add a glass of water. ${w.today} of ${w.target} today.` }, '+ Glass');
+    add.addEventListener('click', () => {
+      const r = this.app.addGlass(1);
+      const now = this.app.view().derived.water;
+      this.say(r.ok ? `${now?.today ?? 0} of ${now?.target ?? 0} glasses.` : r.message);
+      (this.water.querySelector('.glass') as HTMLButtonElement | null)?.focus();
+    });
+    const less = h('button', { class: 'btn ghost less', 'aria-label': 'Remove a glass' }, h('span', { 'aria-hidden': 'true', text: '−' }));
+    less.disabled = w.today === 0;
+    less.addEventListener('click', () => {
+      const r = this.app.addGlass(-1);
+      this.say(r.ok ? 'One glass removed.' : r.message);
+      (this.water.querySelector('.less') as HTMLButtonElement | null)?.focus();
+    });
+    const focused = (document.activeElement as HTMLElement | null)?.classList;
+    const refocus = focused?.contains('glass') ? 'glass' : focused?.contains('less') ? 'less' : null;
+    this.water.replaceChildren(
+      h('div', { class: 'water-head' }, h('h2', { id: 'water-h', class: 'sub', text: 'Water' }), h('span', { class: 'val', text: `${w.today} / ${w.target} glasses` })),
+      cells,
+      h('div', { class: 'water-row' }, h('p', { class: 'water-line', text: line }), less, add),
+    );
+    if (refocus) (this.water.querySelector(`.${refocus}`) as HTMLButtonElement | null)?.focus();
   }
 
   private renderBanners(v: View): void {
@@ -171,6 +224,7 @@ export class TodayView {
     const date = v.viewDate;
     const out: Array<{ h: Habit; ver: HabitVersion; state: HabitDayState; due: boolean }> = [];
     for (const hb of v.snapshot.habits.habits) {
+      if (hb.system) continue; // water has its own bar
       if (compareDateKeys(hb.createdOn, date) > 0) continue;
       const ver = versionOn(hb, date);
       if (!ver || ver.archived) continue;
@@ -180,7 +234,11 @@ export class TodayView {
       if (!due && ver.schedule.kind === 'weekdays') continue;
       out.push({ h: hb, ver, state, due });
     }
-    return out;
+    // Habits with a set time come first, in time order; the rest keep their order.
+    return out
+      .map((x, i) => ({ x, i }))
+      .sort((a, b) => (a.x.ver.time ?? '99:99').localeCompare(b.x.ver.time ?? '99:99') || a.i - b.i)
+      .map(({ x }) => x);
   }
 
   private renderRows(v: View): void {
@@ -306,6 +364,9 @@ export class TodayView {
     if (e?.skip !== undefined) parts.push(skipLabel(e.skip));
     if (ver.schedule.kind === 'perWeek' || ver.schedule.kind === 'perMonth') parts.push(quotaText(v, hb, ver));
     else parts.push(scheduleText(ver.schedule));
+    if (ver.time) parts.unshift(`at ${clockText(ver.time)}`);
+    const dueNow = v.viewDate === v.today && ver.time !== undefined && (state === 'open' || state === 'attempted') && nowHHMM() >= ver.time;
+    row.li.dataset.due = dueNow ? 'now' : '';
     if (chain && chain.current > 1) parts.push(`streak ${chain.current}`);
     row.meta.textContent = parts.join(' · ');
     row.more.setAttribute('aria-label', `More options for ${hb.name}`);
@@ -414,6 +475,27 @@ function monthDates(d: DateKey): DateKey[] {
   const out: DateKey[] = [];
   for (let x = first; x.slice(0, 7) === d.slice(0, 7); x = addDays(x, 1)) out.push(x);
   return out;
+}
+
+const WATER_EVERY_MIN = 120;
+
+function nowHHMM(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function clockText(t: string): string {
+  const [hh, mm] = t.split(':').map(Number);
+  const h12 = ((hh ?? 0) + 11) % 12 + 1;
+  return `${h12}:${String(mm ?? 0).padStart(2, '0')} ${(hh ?? 0) < 12 ? 'am' : 'pm'}`;
+}
+
+function agoText(min: number): string {
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  const hrs = Math.floor(min / 60);
+  const rest = min % 60;
+  return rest ? `${hrs} h ${rest} min ago` : `${hrs} h ago`;
 }
 
 function stat(label: string, value: string, note?: string): HTMLElement {

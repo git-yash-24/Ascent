@@ -58,6 +58,8 @@ export interface Definition {
   minimum?: number;
   schedule: Schedule;
   label?: 1 | 2 | 3;
+  /** Optional set time, 'HH:MM'. */
+  time?: string;
 }
 
 function toVersion(from: DateKey, d: Definition): HabitVersion {
@@ -67,6 +69,7 @@ function toVersion(from: DateKey, d: Definition): HabitVersion {
   const v: HabitVersion = { from, type: d.type, target, minimum, schedule: d.schedule };
   if (d.unit !== undefined) v.unit = d.unit;
   if (d.label !== undefined) v.label = d.label;
+  if (d.time) v.time = d.time;
   return v;
 }
 
