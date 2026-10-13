@@ -293,6 +293,57 @@ notice the abrupt ends and the view looks good even when zoomed out".
   (all of it is below 200 m); the year view now looks over the walls rather than into a
   kilometre-high grey slab, which was the abrupt edge on the right of the year view.
 
+## Weather, seasons, light and Ari's answers to them (13 Oct)
+
+Asked for: a light Ari carries when she walks (changeable), a golden hour with bright yellow
+light, god rays and long shadows, clouds and the sky visible from camp on flatter, uneven ground,
+a low camera at camp to see the stars, stars and the moon in its cycle, shake reactions, the kinds
+of weather (rainy, dry, cloudy, dull, windy, snowy) and the seasons, all in combination with the
+time of day, and how she reacts: clothes, shelter, covering her things. The full matrix is in
+`docs/design/weather-and-seasons.md`.
+
+- **G-53 Weather stays the record's canon; the season picks its kind.** The weekly canon (clear,
+  calm, snow, storm) still decides how hard the day is. The season (from the calendar at the
+  preset 28° N) decides what kind of hard: a slipped week is a blizzard in winter, a thunderstorm
+  in spring and summer, a gale in autumn. Calm weeks vary day to day (cloudy, dull, fog, windy,
+  showers) from the date alone, the same on every device. Twelve kinds in all. Rest and sick days
+  stay calm (A-8).
+- **G-54 Sky is real where it can be.** The moon's position and phase come from the date
+  (synodic month from the new moon of 6 Jan 2000): a full moon rises at sunset, a crescent sets
+  soon after the sun, a new moon leaves the night dark; it lights the night only while up, as
+  much as it is lit. About 2,600 stars and a Milky Way wheel about the pole. Art direction: the
+  valley runs 30° west of north, so the camera faces toward the evening sun; the sky turns with it.
+- **G-55 The golden hour** (sun from -2° to 16°): saturated honey light, a warm sky, crepuscular
+  rays in the sky round a low sun, soft god-ray beams across camp, a rim of sunlight along Ari's
+  edges, and the camp camera swings toward the sun (only when it is ahead or to the side).
+- **G-56 Camp sits in a wide, uneven meadow.** The valley walls are pushed back and lowered for a
+  few hundred metres round camp, with knee- to head-high hummocks and hollows, and a long low
+  saddle toward the sunset. Trees keep a wide gap ahead of camp. At night and in the golden hour
+  the camp shots drop low and look up, so the sky, the clouds and the stars fill the top of the
+  frame. Nothing about the route or the week trail changed.
+- **G-57 Ari answers the weather.** Clothes: a rain shell (cape over her and the pack) in rain, a
+  parka with a fur ruff in the cold or snow, a light shirt with rolled sleeves and a straw hat on a
+  hot sunny day, a thicker scarf and mitts when it bites. Camp: a sheet over her bag (the flask
+  moves to the log beside her, always in view) and the woodpile when anything falls, a rain fly
+  over her seat in heavy rain or a blizzard, the tent laced shut, stones on the fly in a gale.
+  Seen changes play as small scenes (she pulls the cape on, covers the bag); unseen ones are just
+  done. Her routine follows the weather and light: shake off rain or brush off snow, fan herself
+  on a hot afternoon (a little thirstier, presentation only), shade her eyes from a low sun, look
+  up at a clear night sky, reach for a firefly or a petal, flinch at near thunder.
+- **G-58 Her light after dark is the person's choice, per device**: a lantern (in her hand on the
+  trail, on the ground beside her at camp), a headlamp (beam where she looks) or a glow stick
+  (on her strap). She lights it when it gets dark (earlier under storm cloud or fog). One point
+  light, always present at zero by day, so dusk never rebuilds the shaders. Stored in this
+  browser only (no schema change, rollback-safe).
+- **G-59 Shake stays opt-in, now in Setup** ("Shake the phone to stir the world", per device; iOS
+  asks once): snow or petals swirl, a gust bends the trees, her lantern swings, the fire throws
+  sparks, the camera jolts a little and she steadies herself and looks at you. It never touches
+  the record. The Lab has a Shake button to preview it.
+- **G-60 Cost on a mid-range phone**: rain, snow and motes move on the GPU (the CPU sets a few
+  uniforms a frame); snow, wetness and the season's tint are one shared shader patch on the
+  world's materials; stars are hidden by day. The tree models are stored gzipped and unpacked in
+  the browser, which keeps the page under the publish limit (about 950 KB).
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).

@@ -3,7 +3,7 @@
  * and a way back to live. A preview only: it moves the light and the sky, never the record, the
  * story clock, streaks or the weekly climb, and it is gone on reload.
  */
-import type { Weather } from '../core/world';
+import { KINDS, SEASONS, type Kind, type Season } from './conditions';
 import { h } from '../ui/dom';
 import type { Stage } from './stage';
 
@@ -24,13 +24,21 @@ export function labPanel(stage: Stage, onClose: () => void): HTMLElement {
     show();
   });
   show();
-  const weather = h('select', { 'aria-label': 'Weather preview' });
-  for (const [value, label] of [['', 'Weather: from the record'], ['clear', 'Clear'], ['calm', 'Calm'], ['snow', 'Snow'], ['storm', 'Storm']] as const) {
-    const o = h('option', { value, text: label });
-    o.selected = (stage.previewing.weather ?? '') === value;
-    weather.append(o);
-  }
-  weather.addEventListener('change', () => stage.previewWeather(weather.value ? (weather.value as Weather) : null));
+  const cap = (x: string): string => x[0]!.toUpperCase() + x.slice(1);
+  const select = <T extends string>(label: string, first: string, values: readonly T[], cur: T | null, on: (v: T | null) => void): HTMLSelectElement => {
+    const el = h('select', { 'aria-label': label });
+    for (const value of ['', ...values]) {
+      const o = h('option', { value, text: value ? cap(value) : first });
+      o.selected = (cur ?? '') === value;
+      el.append(o);
+    }
+    el.addEventListener('change', () => on(el.value ? (el.value as T) : null));
+    return el;
+  };
+  const weather = select<Kind>('Weather preview', 'Weather: from the record', KINDS, stage.previewing.kind, (k) => stage.previewWeather(k));
+  const season = select<Season>('Season preview', 'Season: from the calendar', SEASONS, stage.previewing.season, (x) => stage.previewSeason(x));
+  const shake = h('button', { class: 'pill', type: 'button' }, 'Shake');
+  shake.addEventListener('click', () => stage.shake(1));
   const presets = h('div', { class: 'lab-presets', role: 'group', 'aria-label': 'Presets' });
   for (const [label, hr] of [['Dawn', 6], ['Golden', 17.4], ['Dusk', 18.8], ['Blue', 19.6], ['Night', 23], ['Noon', 12.5]] as const) {
     const b = h('button', { class: 'pill', type: 'button' }, label);
@@ -42,13 +50,18 @@ export function labPanel(stage: Stage, onClose: () => void): HTMLElement {
     presets.append(b);
   }
   const fps = h('span', { class: 'lab-fps' });
-  const tick = window.setInterval(() => (fps.textContent = `${stage.frameMs.toFixed(1)} ms/frame · ${Math.round(1000 / Math.max(1, stage.frameMs))} fps · quality ${['light', 'standard', 'high'][stage.tier]} · sun ${stage.sunElev.toFixed(1)}°`), 500);
+  const tick = window.setInterval(() => {
+    const c = stage.conditions;
+    fps.textContent = `${stage.frameMs.toFixed(1)} ms/frame · ${Math.round(1000 / Math.max(1, stage.frameMs))} fps · quality ${['light', 'standard', 'high'][stage.tier]} · sun ${stage.sunElev.toFixed(1)}° · ${c.season} ${c.kind}`;
+  }, 500);
   const reset = h('button', { class: 'btn small', type: 'button' }, 'Back to live');
   reset.addEventListener('click', () => {
     stage.previewHour(null);
     stage.previewWeather(null);
+    stage.previewSeason(null);
     dial.value = String(live);
     weather.value = '';
+    season.value = '';
     show();
   });
   const close = h('button', { class: 'btn small ghost', type: 'button' }, 'Close');
@@ -58,13 +71,15 @@ export function labPanel(stage: Stage, onClose: () => void): HTMLElement {
     h('div', { class: 'lab-row' }, h('strong', { text: 'Environment Lab' }), h('span', { class: 'lab-note', text: 'preview only' }), close),
     h('div', { class: 'lab-row' }, dial, time),
     presets,
-    h('div', { class: 'lab-row' }, weather, reset),
+    h('div', { class: 'lab-row' }, weather, season),
+    h('div', { class: 'lab-row' }, shake, reset),
     fps,
   );
   close.addEventListener('click', () => {
     window.clearInterval(tick);
     stage.previewHour(null);
     stage.previewWeather(null);
+    stage.previewSeason(null);
     panel.remove();
     onClose();
   });

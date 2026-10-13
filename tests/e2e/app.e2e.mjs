@@ -22,6 +22,8 @@ const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PAT
 let failures = 0;
 const results = [];
 async function test(name, fn, opts = {}) {
+  // ONLY=<part of a name> runs just the matching tests.
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return;
   const ctx = await browser.newContext({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
   // The HUD hides after 4.5 s idle; most tests act slower than a person would, so a quiet key
   // keeps it awake unless the test is about the hiding itself.
@@ -520,6 +522,24 @@ await test('Setup: one part at a time; deep links open the right part; the Lab s
   assert(!(await page.getByRole('link', { name: 'Open the Environment Lab' }).count()), 'Lab visible before unlock');
   for (let i = 0; i < 5; i++) await page.getByRole('button', { name: /^Ascent / }).click();
   await page.getByRole('link', { name: 'Open the Environment Lab' }).waitFor();
+});
+
+await test("Setup: Ari's light and shake are this device's choices; they never touch the record", async (page) => {
+  await startGame(page);
+  const before = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  await page.evaluate(() => (location.hash = '#setup-settings'));
+  await page.getByText('The world (this device)').waitFor();
+  assert(await page.getByLabel('Lantern').isChecked(), 'lantern is not the default');
+  assert(!(await page.getByLabel('Shake the phone to stir the world').isChecked()), 'shake should start off');
+  await page.getByLabel('Glow stick').check();
+  await page.getByLabel('Shake the phone to stir the world').check();
+  await page.reload();
+  await page.evaluate(() => (location.hash = '#setup-settings'));
+  await page.getByText('The world (this device)').waitFor();
+  assert(await page.getByLabel('Glow stick').isChecked(), 'light choice not kept');
+  assert(await page.getByLabel('Shake the phone to stir the world').isChecked(), 'shake choice not kept');
+  const after = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  assert(before === after, 'the world choices changed the stored record');
 });
 
 await test('water close-up: count, the time of each glass, remove with Undo', async (page) => {

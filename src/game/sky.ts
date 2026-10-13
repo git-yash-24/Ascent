@@ -20,22 +20,47 @@ export interface Sun {
   elev: number;
   /** Unit vector toward the sun. */
   dir: THREE.Vector3;
-  /** Unit vector toward the moon (kept simple: across the sky from the sun, always a little up). */
+  /** Unit vector toward the moon, where it really is for its age: it rises about 50 minutes later each day. */
   moon: THREE.Vector3;
+  /** The moon's elevation in degrees, and how much of its disc is lit (0 new to 1 full). */
+  moonElev: number;
+  moonLit: number;
 }
 
-/** The sun for a local solar hour and day of the year at the preset latitude. */
-export function sunAt(hour: number, doy: number, lat = LATITUDE): Sun {
-  const rad = Math.PI / 180;
-  const decl = 23.44 * rad * Math.sin(((2 * Math.PI) / 365) * (doy - 81));
-  const H = (hour - 12) * 15 * rad;
-  const phi = lat * rad;
+const SYNODIC = 29.530589;
+/** A new moon (6 Jan 2000, 18:14 UTC): the reference for the moon's age. */
+const NEW_MOON = Date.UTC(2000, 0, 6, 18, 14);
+
+/** The moon's age in days, 0 to 29.5 (0 new, about 14.8 full). Real, from the date. */
+export function moonAge(d: Date): number {
+  const days = (d.getTime() - NEW_MOON) / 86_400_000;
+  return ((days % SYNODIC) + SYNODIC) % SYNODIC;
+}
+
+function skyDir(H: number, decl: number, phi: number): THREE.Vector3 {
   const east = -Math.cos(decl) * Math.sin(H);
   const north = Math.sin(decl) * Math.cos(phi) - Math.cos(decl) * Math.cos(H) * Math.sin(phi);
   const up = Math.sin(decl) * Math.sin(phi) + Math.cos(decl) * Math.cos(H) * Math.cos(phi);
-  const dir = new THREE.Vector3(east, up, -north).normalize();
-  const moon = new THREE.Vector3(-dir.x, Math.max(0.35, Math.abs(dir.y) * 0.8), -dir.z).normalize();
-  return { elev: Math.asin(Math.max(-1, Math.min(1, up))) / rad, dir, moon };
+  return new THREE.Vector3(east, up, -north).normalize();
+}
+
+/**
+ * The sun (and the moon, for its age in days) for a local solar hour and day of the year at the
+ * preset latitude. The moon trails the sun eastward by its elongation along the ecliptic, so a
+ * full moon rises at sunset and a crescent sets soon after the sun.
+ */
+export function sunAt(hour: number, doy: number, lat = LATITUDE, age = SYNODIC / 2): Sun {
+  const rad = Math.PI / 180;
+  const lon = ((2 * Math.PI) / 365) * (doy - 81);
+  const tilt = 23.44 * rad;
+  const decl = Math.asin(Math.sin(tilt) * Math.sin(lon));
+  const H = (hour - 12) * 15 * rad;
+  const phi = lat * rad;
+  const dir = skyDir(H, decl, phi);
+  const elong = (age / SYNODIC) * Math.PI * 2;
+  const moon = skyDir(H - elong, Math.asin(Math.sin(tilt) * Math.sin(lon + elong)), phi);
+  const deg = (y: number): number => Math.asin(Math.max(-1, Math.min(1, y))) / rad;
+  return { elev: deg(dir.y), dir, moon, moonElev: deg(moon.y), moonLit: (1 - Math.cos(elong)) / 2 };
 }
 
 export interface SkyLook {
@@ -75,10 +100,12 @@ interface Stop {
 }
 // By sun elevation: night, blue hour, the golden horizon, low sun, full day.
 const STOPS: Stop[] = [
-  { at: -18, zenith: '#060912', mid: '#10162e', horizon: '#232843', fog: '#151a2c', hemiSky: '#3a4380', hemiGround: '#12100d', hemi: 0.95, sun: '#8fa4d8', sunI: 0, stars: 0.95, cloudLit: '#2a3046', cloudShade: '#11141f' },
+  { at: -18, zenith: '#070c1c', mid: '#121a3a', horizon: '#252e55', fog: '#161c30', hemiSky: '#3a4380', hemiGround: '#12100d', hemi: 0.95, sun: '#8fa4d8', sunI: 0, stars: 0.95, cloudLit: '#2a3046', cloudShade: '#11141f' },
   { at: -7, zenith: '#0f1736', mid: '#28366a', horizon: '#6a5f8e', fog: '#2c3050', hemiSky: '#4a5590', hemiGround: '#15120f', hemi: 0.95, sun: '#c78ab0', sunI: 0, stars: 0.55, cloudLit: '#6d5f8f', cloudShade: '#262a45' },
-  { at: -1, zenith: '#1d2552', mid: '#5a4572', horizon: '#ec8a5c', fog: '#6e5662', hemiSky: '#9a86b0', hemiGround: '#46321f', hemi: 1.5, sun: '#ff9a5c', sunI: 0.95, stars: 0.12, cloudLit: '#ffae7a', cloudShade: '#4d3a52' },
-  { at: 7, zenith: '#2a4c84', mid: '#9196b8', horizon: '#f5bf90', fog: '#958890', hemiSky: '#a4a6cc', hemiGround: '#4a3a28', hemi: 1.6, sun: '#ffcf9c', sunI: 1.1, stars: 0, cloudLit: '#ffe2c2', cloudShade: '#7c7590' },
+  { at: -1, zenith: '#1d2552', mid: '#6a4a72', horizon: '#ff8a4c', fog: '#7a5a5c', hemiSky: '#a888a8', hemiGround: '#4e3420', hemi: 1.5, sun: '#ff9248', sunI: 1.0, stars: 0.12, cloudLit: '#ffa060', cloudShade: '#5a3a50' },
+  // The golden hour: low, saturated, honey-coloured light that throws long shadows.
+  { at: 5, zenith: '#4a6a9c', mid: '#e8c08a', horizon: '#ffbc58', fog: '#d8a868', hemiSky: '#e8bc88', hemiGround: '#6a4a28', hemi: 1.7, sun: '#ffb040', sunI: 1.32, stars: 0, cloudLit: '#ffd28a', cloudShade: '#9a7880' },
+  { at: 13, zenith: '#2f5590', mid: '#8fa6c4', horizon: '#ead2b0', fog: '#9aa0a8', hemiSky: '#aab2cc', hemiGround: '#4a3a28', hemi: 1.55, sun: '#ffe2b0', sunI: 1.15, stars: 0, cloudLit: '#fff0dc', cloudShade: '#8e92a6' },
   { at: 25, zenith: '#335b93', mid: '#7fa6cc', horizon: '#cfdce4', fog: '#8d9fb2', hemiSky: '#a9bbd8', hemiGround: '#463b2c', hemi: 1.5, sun: '#fff0d8', sunI: 1.0, stars: 0, cloudLit: '#ffffff', cloudShade: '#a7b3c4' },
 ];
 
@@ -105,7 +132,7 @@ export function skyFor(elev: number, cover: number, storm = 0): SkyLook {
     hemiGround: col('hemiGround'),
     hemi: num('hemi'),
     sun: col('sun'),
-    sunI: num('sunI') * smooth((elev + 3) / 7),
+    sunI: num('sunI') * smooth((elev + 3) / 11),
     moonI: 0.42 * (1 - smooth((elev + 10) / 6)),
     stars: num('stars'),
     cloudLit: col('cloudLit'),
@@ -144,12 +171,17 @@ export class Wind {
   private base = 0.2;
   readonly dir = new THREE.Vector2(1, 0.25).normalize();
 
-  update(t: number, dt: number, w: Weather): void {
-    const target = w === 'clear' ? 0.12 : w === 'calm' ? 0.25 : w === 'snow' ? 0.5 : 0.9;
+  /** A sudden gust on top (a shake of the phone), 0 to 1, dying away over a few seconds. */
+  kick = 0;
+
+  /** `w`: the canon weather, or a steady wind 0 to 1 (game/conditions.ts). */
+  update(t: number, dt: number, w: Weather | number): void {
+    const target = typeof w === 'number' ? w : w === 'clear' ? 0.12 : w === 'calm' ? 0.25 : w === 'snow' ? 0.5 : 0.9;
     this.base += (target - this.base) * (1 - Math.exp(-dt / 8));
     const n = Math.sin(t * 0.21) * 0.5 + Math.sin(t * 0.53 + 1.3) * 0.3 + Math.sin(t * 1.37 + 2.1) * 0.2;
     this.gust = Math.max(0, n) ** 2;
-    this.strength = this.base * (0.7 + this.gust * 0.9);
+    this.kick *= Math.exp(-dt / 1.6);
+    this.strength = this.base * (0.7 + this.gust * 0.9) + this.kick;
     // The direction wanders a little.
     const a = 0.25 + Math.sin(t * 0.05) * 0.2;
     this.dir.set(Math.cos(a), Math.sin(a));

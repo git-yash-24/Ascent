@@ -15,6 +15,7 @@ import { tagOf } from '../../core/tags';
 import { EXPEDITION_NAME_MAX } from '../../core/model/schemas';
 import { markPicker } from '../../game/onboard';
 import { labUnlocked, openLab } from '../lab';
+import { askMotion, LIGHT_STYLES, setWorldPrefs, worldPrefs } from '../worldPrefs';
 
 export interface Saver {
   /** Offer a file to the viewer. Resolves false when declined or unavailable. */
@@ -277,6 +278,39 @@ export class SetupView {
       motionRow,
       h('p', { class: 'hint', text: `Time zone: ${p.settings.timeZone}. Each day keeps the zone it began in.` }),
       h('div', { class: 'row-actions' }, save),
+      this.worldChoices(),
+    );
+  }
+
+  /** The world's per-device choices: they apply at once and stay on this device only. */
+  private worldChoices(): HTMLElement {
+    const prefs = worldPrefs();
+    const lights = h('div', { class: 'choice-row', role: 'radiogroup', 'aria-label': "Ari's light after dark" });
+    for (const [value, label] of LIGHT_STYLES) {
+      const r = h('input', { type: 'radio', name: 'set-light', id: `set-light-${value}`, value });
+      r.checked = prefs.light === value;
+      r.addEventListener('change', () => r.checked && setWorldPrefs({ light: value }));
+      lights.append(h('label', { class: 'check', for: `set-light-${value}` }, r, h('span', { text: label })));
+    }
+    const box = h('input', { id: 'set-shake', type: 'checkbox' });
+    box.checked = prefs.shake;
+    const note = h('p', { class: 'hint', role: 'status', text: 'Shaking the phone swirls the snow or the petals, gusts the trees and swings her lantern. It never changes anything you logged.' });
+    box.addEventListener('change', () => {
+      if (!box.checked) return setWorldPrefs({ shake: false });
+      void askMotion().then((ok) => {
+        box.checked = ok;
+        setWorldPrefs({ shake: ok });
+        if (!ok) note.textContent = 'This browser did not allow the motion sensors here, so shaking stays off.';
+      });
+    });
+    return h(
+      'fieldset',
+      { class: 'field world-choices' },
+      h('legend', { class: 'label', text: 'The world (this device)' }),
+      h('span', { class: 'hint', text: "Ari's light after dark" }),
+      lights,
+      h('label', { class: 'check', for: 'set-shake' }, box, h('span', { text: 'Shake the phone to stir the world' })),
+      note,
     );
   }
 

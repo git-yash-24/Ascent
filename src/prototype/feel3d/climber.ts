@@ -21,11 +21,25 @@ export interface Climber {
   /** Small additive motions: breath and shiver. */
   /** Breathing and shivers. `breath` is the breathing phase (radians), `depth` 0 to 1 deepens it. */
   overlay(t: number, cold: number, motion: boolean, breath?: number, depth?: number): void;
+  /** Clothes for the weather (game/conditions.ts outfitFor). */
+  dress(o: { layer: 'light' | 'coat' | 'shell' | 'parka'; sunHat: boolean; bundled: boolean }): void;
+  /** Every material she wears, for the golden-hour rim light. */
+  materials: THREE.MeshLambertMaterial[];
 }
+
+/** Clothing colours per layer: coat, sleeves, hood. */
+const LAYERS = {
+  coat: ['#384152', '#384152', '#b4532c'],
+  light: ['#8a7a5a', '#b58c68', '#b4532c'],
+  shell: ['#b8902a', '#b8902a', '#b8902a'],
+  parka: ['#5e2f2a', '#5e2f2a', '#4a2622'],
+} as const;
 
 export function buildClimber(): Climber {
   const mat = (color: string): THREE.MeshLambertMaterial => new THREE.MeshLambertMaterial({ color, flatShading: true });
   const coat = mat('#384152');
+  const sleeve = mat('#384152');
+  const mitt = mat('#2b3240');
   const coatDark = mat('#2b3240');
   const hood = mat('#b4532c');
   const scarf = mat('#7f7c74');
@@ -109,7 +123,29 @@ export function buildClimber(): Climber {
   const mouth = new THREE.Object3D();
   mouth.position.set(0, 0.06, 0.22);
   head.add(mouth);
+  // Weather clothes, hidden until needed: a straw hat over the hood, a fur ruff, a rain cape.
+  const straw = mat('#c9a86a');
+  const sunHat = grp(0, 0.17, -0.01);
+  const brim = cyl(0.3, 0.3, 0.014, straw, 12);
+  const crown = cyl(0.12, 0.15, 0.11, straw, 9);
+  crown.position.y = 0.06;
+  const band = cyl(0.152, 0.152, 0.03, coatDark, 9);
+  band.position.y = 0.025;
+  sunHat.add(brim, crown, band);
+  sunHat.rotation.x = -0.12;
+  head.add(sunHat);
+  const ruff = new THREE.Mesh(new THREE.TorusGeometry(0.115, 0.035, 5, 12), mat('#e6dfd2'));
+  ruff.position.set(0, 0.09, 0.13);
+  head.add(ruff);
+  const capeMat = mat(LAYERS.shell[0]);
+  capeMat.side = THREE.DoubleSide;
+  const cape = cyl(0.2, 0.4, 0.7, capeMat, 9);
+  cape.position.set(0, 0.18, -0.05);
+  cape.scale.z = 1.05;
+  spine.add(cape);
 
+  const bulk: THREE.Mesh[] = [torso, skirt];
+  const gloves: THREE.Mesh[] = [];
   const arm = (side: 1 | -1): { shoulder: THREE.Group; elbow: THREE.Group } => {
     const shoulder = grp(0.23 * side, 0.46, 0);
     spine.add(shoulder);
@@ -118,13 +154,15 @@ export function buildClimber(): Climber {
     shoulder.add(upper);
     const elbow = grp(0, -0.3, 0);
     shoulder.add(elbow);
-    const fore = cyl(0.057, 0.05, 0.27, coat, 6);
+    const fore = cyl(0.057, 0.05, 0.27, sleeve, 6);
     fore.position.y = -0.135;
     elbow.add(fore);
-    const glove = new THREE.Mesh(new THREE.IcosahedronGeometry(0.052, 0), coatDark);
+    const glove = new THREE.Mesh(new THREE.IcosahedronGeometry(0.052, 0), mitt);
     glove.position.y = -0.3;
     glove.scale.set(0.9, 1.2, 0.8);
     elbow.add(glove);
+    bulk.push(upper, fore);
+    gloves.push(glove);
     return { shoulder, elbow };
   };
   const L = arm(1);
@@ -167,8 +205,31 @@ export function buildClimber(): Climber {
     hipL: LL.hip, kneeL: LL.knee, hipR: RL.hip, kneeR: RL.knee,
   };
 
+  const scarfParts = neck.children.filter((c) => (c as THREE.Mesh).isMesh) as THREE.Mesh[];
+  const materials: THREE.MeshLambertMaterial[] = [];
+  root.traverse((c) => {
+    const m = (c as THREE.Mesh).material;
+    if (m instanceof THREE.MeshLambertMaterial && !materials.includes(m)) materials.push(m);
+  });
   const climber: Climber = {
-    root, hips, joints, satchel, mouth,
+    root, hips, joints, satchel, mouth, materials,
+    dress(o) {
+      const [c, sl, hd] = LAYERS[o.layer];
+      coat.color.set(c);
+      sleeve.color.set(sl);
+      hood.color.set(hd);
+      const puff = o.layer === 'parka' ? 1.16 : o.layer === 'light' ? 0.94 : 1;
+      for (const m of bulk) m.scale.set(puff, 1, puff * (m === torso ? 0.78 : m === skirt ? 0.85 : 1));
+      sunHat.visible = o.sunHat;
+      ruff.visible = o.layer === 'parka';
+      cape.visible = o.layer === 'shell';
+      for (const p of scarfParts) {
+        p.visible = o.layer !== 'light';
+        p.scale.setScalar(o.bundled ? 1.3 : 1);
+      }
+      for (const g of gloves) g.scale.set(0.9 * (o.bundled ? 1.25 : 1), 1.2, 0.8 * (o.bundled ? 1.25 : 1));
+      mitt.color.set(o.layer === 'light' ? '#a07a5a' : '#2b3240');
+    },
     setPose(p: Pose) {
       hips.position.y = p.hipsY;
       hips.rotation.x = p.hipsX ?? 0;
@@ -197,6 +258,7 @@ export function buildClimber(): Climber {
       R.shoulder.rotation.z -= shiver * 0.8;
     },
   };
+  climber.dress({ layer: 'coat', sunHat: false, bundled: false });
   climber.setPose(POSES.sitHunched);
   return climber;
 }

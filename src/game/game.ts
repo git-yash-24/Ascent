@@ -16,6 +16,7 @@ import { ACCENTS } from './kit';
 import { markPicker } from './onboard';
 import { labPanel } from './lab';
 import { onMotionChange, reducedMotion, scrollBehavior, setMotionSetting } from '../ui/motion';
+import { listenShake, onWorldPrefs, worldPrefs } from '../ui/worldPrefs';
 import type { Controller, View } from '../ui/controller';
 import { h } from '../ui/dom';
 import { BaseCampSheet } from './basecamp';
@@ -192,6 +193,14 @@ export class GameView {
       } else {
         this.stage.onFrame = () => this.placeLabels();
         onMotionChange((r) => this.stage?.setReduced(r));
+        // Shake to stir the world: only when switched on in Setup (per device).
+        let stop: (() => void) | null = null;
+        const shake = (on: boolean): void => {
+          stop?.();
+          stop = on ? listenShake((k) => this.stage?.shake(k)) : null;
+        };
+        shake(worldPrefs().shake);
+        onWorldPrefs((p) => shake(p.shake));
       }
     }
     this.index = SCREENS.indexOf(screen);
