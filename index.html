@@ -41,6 +41,7 @@
       button { cursor: pointer; }
       :focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+      .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 
       /* Header */
       .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); display: flex; align-items: center; gap: 12px; padding-block: 12px; border-bottom: 1px solid var(--line); }
@@ -209,11 +210,15 @@
       body[data-mode='game'] .top .status { position: fixed; z-index: 9; top: calc(9px + env(safe-area-inset-top, 0px)); left: 44px; padding: 0; background: none; pointer-events: none; }
       body[data-mode='game'] .top .status .status-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
       body[data-mode='game'] .top .status .dot { width: 9px; height: 9px; box-shadow: 0 0 0 2px rgba(12, 16, 24, .7); }
-      /* The HUD rests: after a few seconds without input the tabs and the gear fade out of the
-         picture, like a game's HUD between actions. Any touch brings them back; they still work. */
+      body[data-mode='game'] .top .status[data-say='true'] { top: calc(56px + env(safe-area-inset-top, 0px)); left: 12px; display: flex; align-items: center; gap: 6px; padding: 3px 9px 3px 7px; border-radius: 12px; background: rgba(12, 16, 24, .6); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 12px; }
+      body[data-mode='game'] .top .status[data-say='true'] .status-text { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+      body[data-mode='game']:has(.top .status[data-say='true']:not([hidden])) .gap { padding-top: calc(92px + env(safe-area-inset-top, 0px)); }
+      body:has(.game[data-lifted='true']) .top .status[data-say='true'] { opacity: 1 !important; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+      /* The HUD rests: after a few seconds without input the tabs and the gear recede to a low
+         contrast, never out of sight, and never while one of them has focus. */
       body[data-mode='game'] .top .nav, .screens, .flask-btn { transition: opacity .6s ease; }
-      body.hud-idle[data-mode='game'] .top .nav, body.hud-idle .screens { opacity: 0; }
-      body.hud-idle .flask-btn:not([data-due='true']) { opacity: .5; }
+      body.hud-idle[data-mode='game'] .top .nav:not(:focus-within), body.hud-idle .screens:not(:focus-within) { opacity: .55; }
+      body.hud-idle .flask-btn:not([data-due='true']):not(:focus-visible) { opacity: .6; }
       .game[data-lifted='true'] .screens, .game[data-lifted='true'] .flask-btn, body:has(.game[data-lifted='true']) .top .nav, body:has(.game[data-lifted='true']) .top .status { opacity: 0 !important; pointer-events: none; }
 
       /* Liquid glass: a clear pane that blurs and brightens what is behind it, with a bright rim
@@ -223,10 +228,10 @@
       .block { border-radius: 22px; padding: 14px; display: grid; gap: 12px; min-width: 0; }
 
       .game { position: relative; height: 100svh; }
-      .world, .world-fallback { position: fixed; inset: 0; width: 100%; height: 100%; display: block; transform: scale(calc(1 + var(--lift, 0) * .04)); transform-origin: 50% 30%; }
+      .world, .world-fallback { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
       .world-fallback { background: radial-gradient(120% 70% at 30% 75%, #d8875a 0, #4a3a5c 45%, #141a33 100%); }
       .world-fallback::after { content: ''; position: absolute; inset: 30% 0 0; background: #2a2833; clip-path: polygon(0 100%, 0 60%, 18% 30%, 30% 48%, 46% 8%, 62% 42%, 74% 28%, 100% 62%, 100% 100%); }
-      .shade { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(6, 8, 12, 0) 45%, rgba(6, 8, 12, .38) 100%), rgba(6, 8, 12, calc(var(--lift, 0) * .62)); }
+      .shade { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(6, 8, 12, 0) 45%, rgba(6, 8, 12, .38) 100%), rgba(6, 8, 12, calc(var(--lift, 0) * .3)); }
       .screens { position: fixed; z-index: 7; top: calc(10px + env(safe-area-inset-top, 0px)); left: 62px; right: 62px; width: max-content; max-width: calc(100% - 124px); margin-inline: auto; display: flex; gap: 2px; padding: 3px; border-radius: 24px; }
       .screen-btn { min-height: 36px; padding: 0 11px; border: 0; border-radius: 20px; background: transparent; color: rgba(237, 231, 220, .72); font-size: 13px; font-weight: 600; }
       .screen-btn[aria-current='page'] { background: rgba(255, 255, 255, .9); color: #10131a; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
@@ -246,7 +251,7 @@
       .below::before { content: ''; position: absolute; top: 8px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: rgba(255, 255, 255, .28); }
       .below-bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: calc(16px + env(safe-area-inset-top, 0px)) 2px 12px; margin-bottom: 4px; background: linear-gradient(rgba(9, 11, 17, .92) 70%, rgba(9, 11, 17, 0)); }
       .below-t { flex: 1; font: 600 20px/1.2 var(--f-display); }
-      .below-up { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .07); color: var(--ink); opacity: 0; transition: opacity .3s; }
+      .below-up { height: 36px; padding: 0 12px 0 8px; border-radius: 18px; display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; white-space: nowrap; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .07); color: var(--ink); opacity: 0; transition: opacity .3s; }
       .below-up svg { width: 20px; height: 20px; }
       .game[data-lifted='true'] .below-up { opacity: 1; }
       .detail { display: grid; gap: 12px; }
@@ -255,7 +260,11 @@
       .sheet-head { display: flex; align-items: center; gap: 12px; }
       .head-l { flex: 1; min-width: 0; display: grid; gap: 6px; }
       .head-sub { margin: 0; font-size: 13px; color: var(--muted); }
-      .head-next { margin: 0; font-size: 12px; color: rgba(237, 231, 220, .62); }
+      .head-next { display: grid; gap: 2px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, .08); }
+      .head-next p { margin: 0; font-size: 14px; color: var(--ink); }
+      .head-next .head-def { font-size: 12px; color: rgba(237, 231, 220, .62); }
+      .week-top { display: flex; align-items: center; gap: 12px; }
+      .week-top .g-line { flex: 1; margin: 0; }
       .sheet-head.past .head-sub { color: var(--warn); font-weight: 600; }
       .pills { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
       .pill { min-height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(255, 255, 255, .05); color: var(--muted); font-size: 13px; font-weight: 600; flex: none; }
@@ -325,7 +334,7 @@
       .day-pin.o-missed { border-style: dashed; border-color: var(--bad); color: var(--muted); }
       .day-pin.o-today { border-color: #fff; box-shadow: 0 0 0 4px rgba(255, 255, 255, .18), 0 4px 14px rgba(0, 0, 0, .35); animation: today 2s ease-in-out infinite; }
       @keyframes today { 50% { box-shadow: 0 0 0 8px rgba(255, 255, 255, .06), 0 4px 14px rgba(0, 0, 0, .35); } }
-      .day-pin.o-future { opacity: .5; border-style: dotted; color: var(--dim); }
+      .day-pin.o-future { border-style: dotted; color: var(--muted); background: rgba(12, 16, 24, .3); }
       .day-pin:disabled { cursor: default; }
       .here { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border-radius: 18px; background: rgba(12, 16, 24, .5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, .25); font: 600 12px var(--f-body); letter-spacing: .04em; opacity: 0; white-space: nowrap; }
       .here-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 0 4px rgba(226, 115, 63, .3); animation: today 1.6s ease-in-out infinite; }
@@ -390,7 +399,7 @@
       .fc.on { background: var(--frost); }
       .flask .btn { min-height: 44px; }
       .flask .less { width: 44px; }
-      .btn.glass { background: rgba(168, 236, 255, .85); border-color: transparent; color: #0d1117; }
+      .flask .btn.glass { background: rgba(255, 255, 255, .08); border-color: color-mix(in srgb, var(--frost) 70%, transparent); color: var(--ink); }
       .g-sec { display: grid; gap: 10px; }
       .g-sec-h { margin: 0; font: 600 12px var(--f-body); letter-spacing: .1em; text-transform: uppercase; color: rgba(237, 231, 220, .7); }
       .fam { display: grid; gap: 10px; padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--fam) 10%, rgba(255, 255, 255, .03)); border-left: 3px solid var(--fam); }
@@ -509,6 +518,13 @@
       .opt-rest { border-color: var(--frost); color: var(--frost); }
       .opt-sick { border-color: #8a8f99; }
       .opts-foot { display: flex; justify-content: space-between; gap: 8px; }
+      .opts-day { font: 500 14px var(--f-body); color: var(--warn); }
+      .opt-done { flex: 1; min-height: 48px; }
+      .opt-done.undone { border-color: rgba(255, 255, 255, .3); }
+      /* Undo, for a few seconds after a change: it puts back exactly what was there. */
+      .undo { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 6px 6px 6px 14px; border-radius: 16px; background: rgba(14, 18, 24, .78); border: 1px solid rgba(255, 255, 255, .16); font-size: 14px; animation: undoIn .18s ease-out; }
+      .undo[hidden] { display: none; }
+      @keyframes undoIn { from { opacity: 0; transform: translateY(6px); } }
       @media (min-width: 900px) { .cap-line { font-size: 26px; } .chips { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     </style>
   </head>

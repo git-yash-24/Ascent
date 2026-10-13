@@ -201,7 +201,7 @@ export class Controller {
   }
 
   /**
-   * The game screen's tap: done (the full target) or, when already done, empty again.
+   * The game screen's hold: done (the full target) or, when already done, empty again.
    * Anything in between (attempted, held, skipped) becomes done.
    */
   tapDone(habit: HabitId): ActionResult {
@@ -211,6 +211,30 @@ export class Controller {
     const cur = entryOn(this.store.current.snapshot, this._viewDate, habit);
     const done = cur?.v !== undefined && cur.v >= ver.target;
     return done ? this.clearEntry(habit) : this.setValue(habit, ver.target);
+  }
+
+  /** Mark the full target done, whatever was there (the options sheet's "Mark done"). */
+  complete(habit: HabitId): ActionResult {
+    const h = this.store.current.snapshot.habits.habits.find((x) => x.id === habit);
+    const ver = h ? versionOn(h, this._viewDate) : undefined;
+    if (!ver) return { ok: false, message: 'That habit no longer exists.' };
+    return this.setValue(habit, ver.target);
+  }
+
+  /** The value a habit had on a day, to put back on Undo (null: nothing logged). */
+  entryFields(date: DateKey, habit: HabitId): { v?: number; skip?: SkipReason } | null {
+    const e = entryOn(this.store.current.snapshot, date, habit);
+    if (!e || (e.v === undefined && e.skip === undefined)) return null;
+    return { ...(e.v !== undefined ? { v: e.v } : {}), ...(e.skip !== undefined ? { skip: e.skip } : {}) };
+  }
+
+  /** Undo: put back exactly what was there before, on the day it was logged. */
+  revert(date: DateKey, habit: HabitId, prev: { v?: number; skip?: SkipReason } | null): ActionResult {
+    const e = this.entry(prev ?? {});
+    const r = logEntry(this.store.current.snapshot, this.today, date, habit, e);
+    if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be undone.' };
+    this.store.putEntry(date, habit, e);
+    return { ok: true };
   }
 
   skip(habit: HabitId, reason: SkipReason): ActionResult {

@@ -14,7 +14,7 @@
  * The checklist never waits on any of this; without WebGL the screens run on a painted sky.
  */
 import * as THREE from 'three';
-import { buildWorld, glowTexture, groundHeight, pathX } from '../prototype/feel3d/world';
+import { buildWorld, dotTexture, glowTexture, groundHeight, pathX } from '../prototype/feel3d/world';
 import { buildCamp } from '../prototype/feel3d/camp';
 import { buildClimber, POSES, lerpPose, walkPose, type Climber, type Joint, type Pose } from '../prototype/feel3d/climber';
 import { RISE, SCRIPT, type Rot } from '../prototype/shared/poses';
@@ -99,6 +99,8 @@ export class Stage {
   private momentum = 0;
   private lookCooldown = -99;
   private revealAt: THREE.Vector3 | null = null;
+  /** Called once the reveal has played to its end (true) or was cut short (false). */
+  private revealDone: ((shown: boolean) => void) | null = null;
   private steamT = -1;
   private intro: { start: number; done: () => void; seg: number; cues: Set<string> } | null = null;
   private hourOverride: number | null = null;
@@ -106,7 +108,7 @@ export class Stage {
   private hemiBase = 1.35;
   private teaByClose = false;
   private soundOn = true;
-  private readonly reduced: boolean;
+  private reduced: boolean;
 
   private view = 1;
   private phase: Phase = 'sit';
@@ -171,6 +173,11 @@ export class Stage {
     lastLight.position.set(-80, 18, -40);
     this.scene.add(lastLight);
     this.lastLight = lastLight;
+    // A cool rim from behind and above the camp: it separates Ari's shoulders, arms and hood
+    // from the dark slope without lifting the whole night.
+    const rim = new THREE.DirectionalLight('#9db4ff', 0.55);
+    rim.position.set(-5, 8, -11);
+    this.scene.add(rim);
 
     this.sound = createSound();
     this.world = buildWorld(this.scene);
@@ -297,13 +304,32 @@ export class Stage {
   }
 
   /** Show a newly made improvement: the camera finds it, a little light, a bell. */
-  reveal(id: string): void {
+  reveal(id: string, done?: (shown: boolean) => void): void {
     const at = this.kit.where(id);
-    if (!at) return;
+    if (!at) {
+      done?.(true);
+      return;
+    }
+    this.cancelReveal();
     this.revealAt = at;
+    this.revealDone = done ?? null;
     this.act('reveal', this.reduced ? 1.5 : 3.4);
     this.sound.chime(3);
     for (let i = 0; i < 10; i++) this.mote('#ffe3b0', at.clone().add(v((Math.random() - 0.5) * 0.8, 0.2, (Math.random() - 0.5) * 0.8)), v(0, 0.4 + Math.random() * 0.4, 0), 1.6, 0.05);
+  }
+
+  /** Stop a reveal in progress (you moved on); it is not counted as seen. */
+  cancelReveal(): void {
+    if (!this.acts.some((a) => a.kind === 'reveal') && !this.revealDone) return;
+    this.acts = this.acts.filter((a) => a.kind !== 'reveal');
+    const d = this.revealDone;
+    this.revealDone = null;
+    d?.(false);
+  }
+
+  /** The motion policy changed (system or Setup): from the next moment on, stills and fades. */
+  setReduced(r: boolean): void {
+    this.reduced = r;
   }
 
   /** Arrival: she looks up at you and lifts a hand, then goes back to what she was doing. */
@@ -557,7 +583,7 @@ export class Stage {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: '#dfe6f0', size: 0.05, transparent: true, opacity: 0.7, depthWrite: false, fog: false }));
+    const pts = new THREE.Points(g, new THREE.PointsMaterial({ color: '#dfe6f0', size: 0.07, map: dotTexture(), alphaTest: 0.02, transparent: true, opacity: 0.7, depthWrite: false, fog: false }));
     pts.frustumCulled = false;
     this.scene.add(pts);
     return pts;
@@ -766,6 +792,11 @@ export class Stage {
     }
 
     this.acts = this.acts.filter((a) => this.clock - a.start < a.dur);
+    if (this.revealDone && !this.acts.some((a) => a.kind === 'reveal')) {
+      const d = this.revealDone;
+      this.revealDone = null;
+      d(true);
+    }
     return pose;
   }
 

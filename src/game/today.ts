@@ -6,12 +6,12 @@ import { entryOn } from '../core/model/entries';
 import { versionOn } from '../core/habits/versions';
 import { CLIMB } from '../core/habits/weekly';
 import { tagOf, type TagFamily } from '../core/tags';
-import type { Habit, HabitDayState, HabitVersion } from '../core/model/types';
+import type { Habit, HabitDayState, HabitVersion, SkipReason } from '../core/model/types';
 import type { Controller, View } from '../ui/controller';
 import { glyph, h } from '../ui/dom';
 import { dayChip, editWindow, longDate, pct, skipLabel, STATE_WORDS, unitOf, VERDICT_WORDS } from '../ui/format';
 import { holdable } from './hold';
-import { campState, momentumStep } from '../core/world';
+import { campState, momentumStep, waterDue } from '../core/world';
 import { bar, dot, section, weekGauge, type OptionsSheet } from './ui';
 
 const COACH: Record<string, string> = {
@@ -51,7 +51,10 @@ export class TodaySheet {
   private alerts: HTMLElement;
   private water: HTMLElement;
   private body: HTMLElement;
+  private weekEl: HTMLElement;
   private last: View | null = null;
+  private undoBar: HTMLElement;
+  private undoTimer = 0;
 
   constructor(
     private readonly app: Controller,
@@ -61,13 +64,16 @@ export class TodaySheet {
     this.caption = h('div', { class: 'caption', 'aria-live': 'off' });
     this.head = h('div', { class: 'sheet-head' });
     this.alerts = h('div', { class: 'alerts' });
-    this.list = h('ul', { class: 'chips', 'aria-label': 'Habits. Tap for done, hold for attempted or rest.' });
-    this.water = h('section', { class: 'flask glass', 'aria-label': 'Water' });
+    this.list = h('ul', { class: 'chips', 'aria-label': 'Habits. Hold to mark done; tap for the amount, attempted or rest.' });
+    this.undoBar = h('div', { class: 'undo', hidden: true, role: 'status' });
+    this.water = h('section', { class: 'flask glass', 'aria-label': 'Water today' });
     this.body = h('div', { class: 'detail-body' });
+    this.weekEl = h('div', { class: 'detail-body' });
     // Over the world: only the checklist (and an alert when one needs you).
-    this.compact = h('div', { class: 'compact-today' }, this.alerts, this.list);
-    // Scrolling down: the day picker and week, the flask in full, habits by group.
-    this.detail = h('div', { class: 'detail' }, h('div', { class: 'glass block' }, this.head), this.water, this.body);
+    this.compact = h('div', { class: 'compact-today' }, this.alerts, this.undoBar, this.list, h('span', { id: 'chip-how', class: 'sr-only', text: 'Hold to mark done. Tap for options.' }));
+    // Scrolling down: the day you are logging and its habits first; then water (always today),
+    // then the week and what comes next at camp.
+    this.detail = h('div', { class: 'detail' }, h('div', { class: 'glass block' }, this.head, this.body), this.water, this.weekEl);
     setInterval(() => this.last && this.renderWater(this.last), 60_000);
   }
 
@@ -89,7 +95,7 @@ export class TodaySheet {
     const waiting = d.storyDayEarned === 0 ? COACH.first : momentumStep(d, v.today) >= 3 ? COACH.cold : COACH.empty;
     const line = outcome === 'free' ? COACH.free : anyLogged ? COACH[outcome] ?? COACH.partial : waiting;
     this.caption.replaceChildren(
-      h('span', { class: 'cap-day', text: `Day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(d.climb.current?.score ?? 0)}` }),
+      h('span', { class: 'cap-day', text: `Trail day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(d.climb.current?.score ?? 0)}` }),
       h('span', { class: 'cap-line coach', text: line ?? '' }),
     );
   }
@@ -105,24 +111,9 @@ export class TodaySheet {
         ),
       );
     }
-    const cur = v.derived.climb.current;
-    const score = cur?.score ?? 0;
-    const barAt = cur?.steep ? CLIMB.steepBar : CLIMB.climb;
-    const ring = h('div', { class: 'ring', role: 'img', 'aria-label': `This week ${pct(score)}${cur ? `, ${weekWord(score, barAt, cur.verdict)}` : ''}` });
-    ring.style.setProperty('--p', String(Math.round(score * 100)));
-    ring.style.setProperty('--bar', String(Math.round(barAt * 100)));
-    ring.append(h('span', { class: 'ring-v', text: pct(score) }), h('span', { class: 'ring-l', text: 'week' }));
-    const day = v.derived.days[v.viewDate];
-    const f = day?.progress ?? 0;
+    const summary = daySummary(v, this.visible(v));
     this.head.replaceChildren(
-      h(
-        'div',
-        { class: 'head-l' },
-        pills,
-        h('p', { class: 'head-sub', text: v.viewDate === v.today ? `Today ${pct(f)} · ${weekWord(score, barAt, cur?.verdict ?? 'hold')}` : `Logging for ${longDate(v.viewDate)}` }),
-        nextAtCamp(v.derived.storyDayEarned),
-      ),
-      ring,
+      h('div', { class: 'head-l' }, pills, h('p', { class: 'head-sub', text: v.viewDate === v.today ? summary : `Logging for ${longDate(v.viewDate)} · ${summary}` })),
     );
     this.head.classList.toggle('past', v.viewDate !== v.today);
   }
@@ -209,10 +200,12 @@ export class TodaySheet {
     const g = h('span', { class: 'gchip-glyph' });
     const name = h('span', { class: 'gchip-name' });
     const val = h('span', { class: 'gchip-val' });
-    const btn = h('button', { class: 'gchip', type: 'button', role: 'checkbox', 'aria-haspopup': 'dialog', 'data-id': hb.id }, g, h('span', { class: 'gchip-text' }, name, val));
+    const btn = h('button', { class: 'gchip', type: 'button', 'aria-haspopup': 'dialog', 'aria-describedby': 'chip-how', 'data-id': hb.id }, g, h('span', { class: 'gchip-text' }, name, val));
+    // Hold is done (the quick way); a tap opens everything else, Mark done included.
     holdable(btn, {
-      tap: (p) => this.tap(hb.id, p),
-      hold: () => void this.hold(hb.id, btn),
+      tap: (p) => void this.options(hb.id, btn, p.via === 'key', p.via === 'pointer' ? p : undefined),
+      hold: () => this.markDone(hb.id, btn),
+      menu: () => void this.options(hb.id, btn, true),
     });
     return { li: h('li', {}, btn), btn, glyph: g, name, val };
   }
@@ -237,27 +230,38 @@ export class TodaySheet {
     else if (ver.time) val = clockText(ver.time);
     else if (state === 'unscheduled') val = 'not due';
     c.val.textContent = val;
-    c.btn.setAttribute('aria-checked', state === 'fulfilled' ? 'true' : state === 'held' || state === 'attempted' || state === 'skipped' ? 'mixed' : 'false');
     c.btn.setAttribute('aria-label', `${hb.name}, ${family.name}, ${STATE_WORDS[state]}${val && val !== 'not due' ? `, ${val}` : ''}`);
   }
 
-  private tap(id: string, p: { x: number; y: number }): void {
+  /** Hold: done, or empty again when it already was. Saved first; the world answers after. */
+  private markDone(id: string, el: HTMLElement): void {
+    const v0 = this.app.view();
+    const date = v0.viewDate;
+    const prev = this.app.entryFields(date, id);
     const t0 = performance.now();
     const r = this.app.tapDone(id);
     (window as unknown as { __ascent?: { tapToStored: number[] } }).__ascent?.tapToStored.push(performance.now() - t0);
     this.report(id, r);
+    if (!r.ok) return;
     const v = this.app.view();
-    const state = v.derived.days[v.viewDate]?.states[id];
-    if (r.ok) this.hooks.pulse(p.x, p.y, state === 'fulfilled');
+    const state = v.derived.days[date]?.states[id];
+    const b = el.getBoundingClientRect();
+    this.hooks.pulse(b.left + b.width / 2, b.top + b.height / 2, state === 'fulfilled');
+    this.offerUndo(id, date, prev);
   }
 
-  private async hold(id: string, opener: HTMLElement): Promise<void> {
+  /** Tap: the options sheet (amount, mark done, attempted, rest). */
+  private async options(id: string, opener: HTMLElement, typing: boolean, from?: { x: number; y: number }): Promise<void> {
     const v = this.app.view();
     const hb = v.snapshot.habits.habits.find((x) => x.id === id);
     const ver = hb ? versionOn(hb, v.viewDate) : undefined;
     if (!hb || !ver) return;
-    const cur = entryOn(v.snapshot, v.viewDate, id)?.v;
-    const choice = await this.opts.open({ name: hb.name, family: tagOf(hb).family, ver, opener, ...(cur !== undefined ? { current: cur } : {}) });
+    const date = v.viewDate;
+    const prev = this.app.entryFields(date, id);
+    const cur = entryOn(v.snapshot, date, id)?.v;
+    const done = v.derived.days[date]?.states[id] === 'fulfilled';
+    const day = date === v.today ? null : longDate(date);
+    const choice = await this.opts.open({ name: hb.name, family: tagOf(hb).family, ver, opener, done, day, typing, ...(from ? { from: { x: from.x, y: from.y } } : {}), ...(cur !== undefined ? { current: cur } : {}) });
     if (!choice) return;
     const r =
       choice.kind === 'attempt'
@@ -268,8 +272,35 @@ export class TodaySheet {
           ? this.app.skip(id, choice.reason)
           : choice.kind === 'clear'
             ? this.app.clearEntry(id)
-            : this.app.tapDone(id);
+            : this.app.complete(id);
     this.report(id, r);
+    if (!r.ok) return;
+    const state = this.app.view().derived.days[date]?.states[id];
+    const b = opener.getBoundingClientRect();
+    if (choice.kind === 'done' || choice.kind === 'attempt') this.hooks.pulse(b.left + b.width / 2, b.top + b.height / 2, state === 'fulfilled');
+    this.offerUndo(id, date, prev);
+  }
+
+  /** A few seconds to take it back: Undo restores exactly what was there, not an empty entry. */
+  private offerUndo(id: string, date: string, prev: { v?: number; skip?: SkipReason } | null): void {
+    const v = this.app.view();
+    const hb = v.snapshot.habits.habits.find((x) => x.id === id);
+    const state = v.derived.days[date]?.states[id] ?? 'open';
+    window.clearTimeout(this.undoTimer);
+    const undo = h('button', { class: 'btn small ghost', type: 'button' }, 'Undo');
+    undo.addEventListener('click', () => {
+      window.clearTimeout(this.undoTimer);
+      this.undoBar.hidden = true;
+      const r = this.app.revert(date, id, prev);
+      this.hooks.say(r.ok ? `${hb?.name ?? 'Habit'}: undone.` : r.message);
+      (this.chips.get(id)?.btn as HTMLElement | undefined)?.focus();
+    });
+    this.undoBar.replaceChildren(h('span', { text: `${hb?.name ?? 'Habit'} · ${STATE_WORDS[state]}` }), undo);
+    this.undoBar.hidden = false;
+    this.undoTimer = window.setTimeout(() => {
+      if (!this.undoBar.contains(document.activeElement)) this.undoBar.hidden = true;
+      else this.undoTimer = window.setTimeout(() => (this.undoBar.hidden = true), 4000);
+    }, 6000);
   }
 
   private report(id: string, r: { ok: true } | { ok: false; message: string }): void {
@@ -287,9 +318,8 @@ export class TodaySheet {
     const w = v.derived.water;
     this.water.hidden = !w;
     if (!w) return;
-    const since = w.lastAt === null ? null : Math.floor((Date.now() - w.lastAt) / 60_000);
     const full = w.today >= w.target;
-    const due = !full && (since === null ? new Date().getHours() >= 9 : since >= 120);
+    const due = waterDue(w, Date.now(), v.snapshot.profile?.settings.timeZone);
     this.water.dataset.due = String(due);
     const cells = h('span', { class: 'flask-cells', 'aria-hidden': 'true' });
     for (let i = 0; i < w.target; i++) cells.append(h('span', { class: i < w.today ? 'fc on' : 'fc' }));
@@ -362,22 +392,27 @@ export class TodaySheet {
       ], pct(score)),
       h('div', { class: 'g-legend', 'aria-hidden': 'true' }, h('span', { text: '30% hold' }), h('span', { text: `${Math.round(barAt * 100)}% climb` }), h('span', { text: '85% summit' })),
     );
-    this.body.replaceChildren(h('div', { class: 'glass block' }, section('By group', ...groups)), h('div', { class: 'glass block' }, week));
+    // Group headings only earn their place with more than one group.
+    const rows = fams.size > 1 ? groups : [...fams.values()].flatMap((f) => f.rows);
+    this.body.replaceChildren(...rows);
+    const ring = h('div', { class: 'ring', role: 'img', 'aria-label': `This week ${pct(score)}; the climb needs ${Math.round(barAt * 100)}%` });
+    ring.style.setProperty('--p', String(Math.round(score * 100)));
+    ring.style.setProperty('--bar', String(Math.round(barAt * 100)));
+    ring.append(h('span', { class: 'ring-v', text: pct(score) }), h('span', { class: 'ring-l', text: 'week' }));
+    // Score and threshold side by side, above the gauge.
+    const line = week.querySelector('.g-line')!;
+    const ref = line.nextSibling;
+    const top = h('div', { class: 'week-top' }, ring, line);
+    week.insertBefore(top, ref);
+    this.weekEl.replaceChildren(h('div', { class: 'glass block' }, week, nextAtCamp(v.derived.storyDayEarned)));
   }
 }
 
-function weekWord(score: number, bar: number, verdict: string): string {
-  if (verdict === 'rest') return 'rest week';
-  if (score >= CLIMB.summit) return 'summit push';
-  if (score >= bar) return 'climb secured';
-  return `${Math.ceil((bar - score) * 100)}% to the climb`;
-}
-
 function weekLong(score: number, bar: number, verdict: string, comeback: boolean, headstart: number): string {
-  const bits = [verdict === 'rest' ? 'Rest week' : score >= bar ? VERDICT_WORDS[score >= CLIMB.summit ? 'summit' : 'climb'].now : `${Math.ceil((bar - score) * 100)}% to the climb`];
+  const bits = [verdict === 'rest' ? 'Rest week' : score >= bar ? VERDICT_WORDS[score >= CLIMB.summit ? 'summit' : 'climb'].now : `the climb needs ${Math.round(bar * 100)}%`];
   if (headstart > 0) bits.push(`${Math.round(headstart * 100)}% head start`);
   if (comeback) bits.push('comeback climb: two stages if you make it');
-  return `${pct(score)} · ${bits.join(' · ')}`;
+  return `This week ${pct(score)} · ${bits.join(' · ')}`;
 }
 
 function fmt(n: number): string {
@@ -391,9 +426,30 @@ function clockText(t: string): string {
 }
 
 
-/** The next thing Ari makes at camp, and honestly how far off it is (story days, not dates). */
+/**
+ * The next thing Ari makes at camp, and honestly how far off it is. Trail days are the story
+ * clock: days with at least one habit held or done, or rested; sick days and misses do not count.
+ */
 function nextAtCamp(storyDay: number): HTMLElement | null {
   const n = campState(storyDay).next;
   if (!n) return null;
-  return h('p', { class: 'head-next', text: `Next at camp: ${n.name}, in ${n.inDays} story ${n.inDays === 1 ? 'day' : 'days'}` });
+  return h(
+    'div',
+    { class: 'head-next' },
+    h('p', { text: `Next at camp: ${n.name}, after ${n.inDays} more trail ${n.inDays === 1 ? 'day' : 'days'}.` }),
+    h('p', { class: 'head-def', text: 'A trail day is any day with at least one habit held or done, or a rest day.' }),
+  );
+}
+
+/** What the day stands at, in counts, never a percentage that hides what it is out of. */
+function daySummary(v: View, items: Array<{ state: HabitDayState }>): string {
+  const out = v.derived.days[v.viewDate]?.outcome;
+  if (out === 'rested') return 'Rest day: everything rested';
+  if (out === 'excused') return 'Sick day: paused';
+  const due = items.filter((i) => i.state !== 'unscheduled' && i.state !== 'skipped');
+  if (due.length === 0) return 'Nothing due';
+  const done = due.filter((i) => i.state === 'fulfilled').length;
+  const held = due.filter((i) => i.state === 'held').length;
+  const rest = items.filter((i) => i.state === 'skipped').length;
+  return [`${done} of ${due.length} done`, held ? `${held} held` : '', rest ? `${rest} resting` : ''].filter(Boolean).join(' · ');
 }

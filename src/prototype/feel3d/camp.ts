@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { glowTexture, groundHeight } from './world';
+import { dotTexture, glowTexture, groundHeight } from './world';
 import { mulberry32, valueNoise } from '../shared/noise';
 
 function flameTexture(): THREE.CanvasTexture {
@@ -87,14 +87,14 @@ export function buildFire(shadowSize: number): Fire {
   group.add(glow);
 
   // Embers rising
-  const EMBERS = 60;
+  const EMBERS = 34;
   const ePos = new Float32Array(EMBERS * 3);
   const eLife = new Float32Array(EMBERS);
   const eVel = new Float32Array(EMBERS * 3);
   for (let i = 0; i < EMBERS; i++) eLife[i] = rnd() * 2;
   const eGeo = new THREE.BufferGeometry();
   eGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
-  const eMat = new THREE.PointsMaterial({ color: '#ffb066', size: 0.035, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false });
+  const eMat = new THREE.PointsMaterial({ color: '#ffb066', size: 0.045, map: dotTexture(), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
   const embers = new THREE.Points(eGeo, eMat);
   group.add(embers);
 

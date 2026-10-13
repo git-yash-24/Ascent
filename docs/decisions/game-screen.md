@@ -113,6 +113,43 @@ Calls made this round:
 - **G-24 Touching Ari** makes her look at you at most once every 10 s; the fire still sparks every time.
 - **G-25 User-facing text calls Ari "she".**
 
+## UI audit round (13 Oct): gestures, honest numbers, modals, readability
+
+Asked for: hold marks a habit done and a tap opens the other options (Xander), and the fixes in
+section 0 of `Ascent_UI_Cinematic_Experience_Claude_Guideline.md`, inside the current five screens.
+
+Before → after:
+
+| Area | Before | After |
+|---|---|---|
+| Habit chip | Tap filled the whole target (0 → 50/50); hold opened options | Hold 0.7 s = done (again = empty); tap opens the sheet: amount (total so far), Mark done, Attempted, rest options, Clear. Button semantics, state in the name |
+| Undo | None on the game screen | A few seconds of Undo after any change; it restores exactly the prior entry (12/50, a sick day), not empty |
+| Ghost click | n/a | The click that ends the opening tap is swallowed near the tap point, so it cannot press a button in the new sheet |
+| Keyboard | Enter toggled done | Enter opens the sheet with Mark done (or the amount) focused; Shift+F10 too; #list stays plain checkboxes |
+| Camp reveal | Marked seen 0.4 to 2.2 s before it played | Earned, waiting, shown are separate. Plays only on Camp/Today with nothing else up and the tab visible; marked seen when it finishes; cut short by leaving, it waits. Several at once: newest plays, all named |
+| Faded HUD | Opacity 0 but focusable and tappable | Idle recedes to low contrast, never while focused; when the detail is up the tabs, flask and gear are inert and focus moves to the detail's Back button |
+| Opening, replay | div with aria-modal, background reachable | Background inert (pager, tabs, flask, labels, header); focus returns; Alt+PageUp/Down blocked; replay closes from Close, Escape or the backdrop only |
+| Reduced motion | System preference in some places, Setup in others | One policy (`src/ui/motion.ts`): system OR Setup, live; CSS, scrolling and the stage all follow |
+| Water | "Water" under a selected past day, but always wrote today; 9 am by device clock | Titled "Water today" and placed outside the day's block; one reminder policy in the record's zone (`waterDue`) |
+| Save status | Hidden in game mode | Dot always; words when not synced ("Saved on this device", "Not saved yet", "Offline · saved on this device"), still visible over the detail |
+| Numbers | "Today 0% · 50% to the climb" | "0 of 2 done" (rest and sick days named); "This week 8% · the climb needs 50%"; insights say points; "Next at camp: …, after 4 more trail days" with the trail-day rule stated |
+| Detail order | Day picker, week ring, water, groups | Day and its habits, then water, then the week and camp; group headings only with more than one group |
+| Scene | Shade to 0.62 black plus 4% zoom from a third of the way down; nav hid at 33% | Shade follows how much the detail covers, max 0.3, no zoom; nav steps aside when the detail reaches the top. Cool rim light on Ari; round, fewer embers; round snow and stars |
+
+Calls made:
+
+- **G-26 Hold is done, tap is options** on the game screen. The flask keeps tap = a glass (a glass is an increment, not a completion).
+- **G-27 The rest sentence is exact**: a rested habit leaves the day's count and keeps its streak; when everything rests the day still counts on the trail; a sick day is paused.
+- **G-28 Camp follows the record**: improvements are derived from trail days, so only a correction of the record can remove one; a reveal is never repeated once seen.
+- **G-29 Trail day** is the user-facing name for a story day: at least one habit held or done, or a rest day.
+
+Measured contrast on the detail glass over a bright fire pixel: ink 11.8:1, muted 5.4:1, the
+trail-day note 5.5:1, warn 7.6:1, frost 7.8:1; chip text over the brightest fire 4.6:1; the
+primary button's dark label on ember 6.0:1. `--dim` (3.2:1) is no longer used for text on pins.
+
+Not done here (needs a choice): the Camp / Today / Journey dock-and-sheet model of sections 5 to
+7. The brief asks for it to be prototyped and compared with this repaired model before either ships.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).

@@ -13,6 +13,7 @@ import { h } from '../ui/dom';
 import { TodayView } from '../ui/checklist/today';
 import { SetupView, type Saver } from '../ui/setup/setup';
 import { welcome } from '../ui/welcome';
+import { setMotionSetting } from '../ui/motion';
 import { GameView, screenFromHash } from '../game/game';
 
 declare global {
@@ -21,7 +22,7 @@ declare global {
   }
 }
 
-const STATUS: Record<SyncStatus, string> = { synced: '', saving: 'Saving', local: 'Saved here', unsaved: 'Not saved' };
+const STATUS: Record<SyncStatus, string> = { synced: '', saving: 'Saving', local: 'Saved on this device', unsaved: 'Not saved yet' };
 
 function deviceId(kv: KV | null): string {
   try {
@@ -95,9 +96,12 @@ export async function boot(root: HTMLElement): Promise<void> {
   let home = '#today';
   const paint = (v: View, navigated = false): void => {
     if (location.hash === '#home') history.replaceState(null, '', home);
+    setMotionSetting(v.snapshot.profile?.settings.reducedMotion ?? false);
     const s = v.store.status;
     statusDot.dataset.s = s;
-    statusText.textContent = v.store.offline ? 'Offline' : STATUS[s];
+    statusText.textContent = v.store.offline ? 'Offline · saved on this device' : STATUS[s];
+    // Words show, not only the dot, whenever the truth is anything but synced or a passing save.
+    status.dataset.say = String(v.store.offline || s === 'local' || s === 'unsaved');
     status.hidden = s === 'synced' && !v.store.offline;
     if (v.firstRun) {
       // Decide only once the store has opened: a returning person's first paint must never

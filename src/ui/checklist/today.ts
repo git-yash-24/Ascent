@@ -510,7 +510,7 @@ function weekText(score: number, bar: number, verdict: string, comeback: boolean
   const extra = comeback ? ' · comeback climb' : '';
   if (verdict === 'rest') return 'Rest week';
   if (score >= bar) return `${pct(score)} · ${VERDICT_WORDS[verdict === 'summit' ? 'summit' : 'climb'].now}${extra}`;
-  return `${pct(score)} · ${Math.ceil((bar - score) * 100)}% to the climb${extra}`;
+  return `${pct(score)} · the climb needs ${Math.round(bar * 100)}%${extra}`;
 }
 
 function meter(label: string, value: number, text: string, marks: Array<{ at: number; label: string }>, kind: string): HTMLElement {

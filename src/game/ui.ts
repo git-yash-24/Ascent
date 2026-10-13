@@ -44,36 +44,64 @@ export function tiny(label: string, value: string): HTMLElement {
 export type OptionChoice = { kind: 'attempt'; amount?: number } | { kind: 'skip'; reason: SkipReason } | { kind: 'clear' } | { kind: 'done' };
 
 /**
- * The hold menu: attempted (with an amount for counted habits), the rest options, clear.
- * One dialog reused for every habit; focus returns to the chip that opened it.
+ * The options a tap opens: mark done (or not done), the amount for counted habits, attempted,
+ * the rest options, clear. One native dialog reused for every habit; focus returns to the chip
+ * that opened it. Holding the chip is the quick way to mark it done; this is the other way.
  */
 export class OptionsSheet {
   readonly el: HTMLDialogElement;
   private resolve: ((c: OptionChoice | null) => void) | null = null;
   private opener: HTMLElement | null = null;
+  private ghost: { x: number; y: number; at: number } | null = null;
 
   constructor() {
     this.el = h('dialog', { class: 'opts', 'aria-labelledby': 'opts-title' });
     this.el.addEventListener('close', () => this.finish(null));
+    // The click that ends the tap which opened the sheet lands on the sheet itself: swallow it,
+    // or it would close the sheet or press whatever button is now under the finger.
+    this.el.addEventListener(
+      'click',
+      (e) => {
+        const g = this.ghost;
+        if (g && performance.now() - g.at < 600 && Math.hypot(e.clientX - g.x, e.clientY - g.y) < 24) {
+          this.ghost = null;
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      },
+      true,
+    );
     this.el.addEventListener('click', (e) => {
       if (e.target === this.el) this.el.close();
     });
+    // Keep the sheet above the on-screen keyboard while the amount is being typed.
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', () => {
+      if (!this.el.open) return;
+      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      this.el.style.marginBottom = covered > 40 ? `${covered + 8}px` : '';
+    });
   }
 
-  open(opts: { name: string; family: TagFamily; ver: HabitVersion; current?: number; opener: HTMLElement }): Promise<OptionChoice | null> {
+  open(opts: { name: string; family: TagFamily; ver: HabitVersion; current?: number; done: boolean; day: string | null; opener: HTMLElement; typing: boolean; from?: { x: number; y: number } }): Promise<OptionChoice | null> {
     this.finish(null);
     this.opener = opts.opener;
     const { ver } = opts;
     const counted = ver.type === 'numeric' || ver.type === 'duration';
     const unit = unitOf(ver);
+    const u = unit ? ` ${unit}` : '';
     const choose = (c: OptionChoice) => () => this.finish(c);
-    const title = h('h2', { id: 'opts-title', class: 'opts-title' }, dot(opts.family), opts.name);
+    const title = h('h2', { id: 'opts-title', class: 'opts-title', tabindex: '-1' }, dot(opts.family), opts.name, opts.day ? h('span', { class: 'opts-day', text: ` · ${opts.day}` }) : null);
     const parts: Node[] = [title];
+    const mark = opts.done
+      ? h('button', { class: 'btn opt-done undone', type: 'button', onclick: choose({ kind: 'clear' }) }, 'Mark not done')
+      : h('button', { class: 'btn primary opt-done', type: 'button', onclick: choose({ kind: 'done' }) }, counted ? `Mark done · ${fmtN(ver.target)}${u}` : 'Mark done');
+    let first: HTMLElement = mark;
 
     if (counted) {
-      const input = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', class: 'opts-amount', 'aria-label': `${opts.name}, ${unit || 'amount'}` });
+      const input = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', class: 'opts-amount', 'aria-label': `${opts.name}, total ${unit || 'amount'} so far` });
       input.value = opts.current !== undefined && opts.current > 0 ? String(opts.current) : '';
-      input.placeholder = String(Math.round(ver.minimum));
+      input.placeholder = '0';
       const save = (): void => {
         const n = Number(input.value);
         if (input.value.trim() === '' || !Number.isFinite(n) || n < 0) {
@@ -89,17 +117,22 @@ export class OptionsSheet {
         }
       });
       parts.push(
-        h('p', { class: 'opts-hint', text: `How much? Target ${ver.target}${unit ? ` ${unit}` : ''}, hold point ${ver.minimum}.` }),
-        h('div', { class: 'opts-row' }, input, h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Save amount')),
+        h('p', { class: 'opts-hint', text: `Total so far, out of ${fmtN(ver.target)}${u}. ${fmtN(ver.minimum)} holds the day.` }),
+        h('div', { class: 'opts-row' }, input, h('button', { class: 'btn', type: 'button', onclick: save }, 'Save amount')),
+        h('div', { class: 'opts-row' }, mark),
       );
+      if (opts.typing) first = input;
     } else {
-      parts.push(h('div', { class: 'opts-row' }, h('button', { class: 'btn opt-attempt', type: 'button', onclick: choose({ kind: 'attempt' }) }, 'Attempted')));
+      parts.push(h('div', { class: 'opts-row' }, mark, h('button', { class: 'btn opt-attempt', type: 'button', onclick: choose({ kind: 'attempt' }) }, 'Attempted')));
     }
     const rests = h('div', { class: 'opts-grid', role: 'group', 'aria-label': 'Rest options' });
     for (const r of SKIP_REASONS) {
       rests.append(h('button', { class: `opt opt-${r.reason === true ? 'skip' : r.reason}`, type: 'button', onclick: choose({ kind: 'skip', reason: r.reason }) }, r.label));
     }
-    parts.push(h('p', { class: 'opts-hint', text: 'Or rest it. Rest and sick days keep the streak; nothing moves.' }), rests);
+    parts.push(
+      h('p', { class: 'opts-hint', text: 'Or rest it: it leaves the day’s count and keeps its streak. When everything rests, the day still counts on the trail; a sick day is paused instead.' }),
+      rests,
+    );
     parts.push(
       h(
         'div',
@@ -109,9 +142,12 @@ export class OptionsSheet {
       ),
     );
     this.el.style.setProperty('--fam', opts.family.color);
+    this.el.style.marginBottom = '';
     this.el.replaceChildren(...parts);
+    first.setAttribute('autofocus', '');
+    this.ghost = opts.from ? { ...opts.from, at: performance.now() } : null;
     if (!this.el.open) this.el.showModal();
-    (this.el.querySelector('input, .opt-attempt') as HTMLElement | null)?.focus();
+    first.focus();
     return new Promise((r) => (this.resolve = r));
   }
 
@@ -124,4 +160,8 @@ export class OptionsSheet {
       this.opener?.focus();
     }
   }
+}
+
+function fmtN(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }

@@ -288,7 +288,7 @@ await test('game: the flask is on every screen; a tap is a glass, a hold offers 
 
 await test('game: tapping a day on the week screen replays it, and it can be closed', async (page) => {
   await startGame(page);
-  await chip(page, 'Qbank').tap();
+  await hold(page, chip(page, 'Qbank'), 850);
   await page.getByRole('button', { name: 'Week', exact: true }).click();
   await page.waitForFunction(() => location.hash === '#week');
   await page.locator('#s-week .wd:not([disabled])').last().click();
@@ -297,60 +297,90 @@ await test('game: tapping a day on the week screen replays it, and it can be clo
   assert(first.includes('Today, still being written'), `first card: ${first}`);
   await page.waitForTimeout(1400);
   assert((await page.locator('.reel-card').textContent()).includes('Qbank'), 'second card is not the habit');
+  // A real modal: nothing behind it takes focus or keys.
+  assert(await page.locator('.pager').evaluate((e) => e.inert), 'screens behind the replay are not inert');
+  await page.keyboard.press('Alt+PageDown');
+  assert((await page.evaluate(() => location.hash)) === '#week', 'Alt+PageDown changed screens behind the replay');
   await page.getByRole('button', { name: 'Close' }).click();
   assert(await page.locator('.reel').isHidden(), 'replay did not close');
+  assert(!(await page.locator('.pager').evaluate((e) => e.inert)), 'screens stayed inert after the replay');
   // Escape closes it too.
   await page.locator('#s-week .wd:not([disabled])').last().click();
   await page.keyboard.press('Escape');
   assert(await page.locator('.reel').isHidden(), 'Escape did not close the replay');
 });
 
-await test('game: tap is done, tap again is empty; under 100 ms to stored', async (page) => {
+await test('game: hold is done, hold again is empty; under 100 ms to stored', async (page) => {
   await startGame(page);
-  await chip(page, 'Review mistakes').tap();
-  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'tap did not mark done');
-  await chip(page, 'Qbank').tap();
-  assert((await chip(page, 'Qbank').getAttribute('data-state')) === 'fulfilled', 'amount tap did not fill to target');
+  await hold(page, chip(page, 'Review mistakes'), 850);
+  assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'fulfilled', 'hold did not mark done');
+  assert(!(await page.locator('dialog.opts[open]').count()), 'hold opened the options');
+  await hold(page, chip(page, 'Qbank'), 850);
+  assert((await chip(page, 'Qbank').getAttribute('data-state')) === 'fulfilled', 'hold on an amount did not fill to target');
   assert((await chip(page, 'Qbank').textContent()).includes('50/50'), 'amount not shown');
-  await chip(page, 'Review mistakes').tap();
-  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'false', 'second tap did not empty');
+  await hold(page, chip(page, 'Review mistakes'), 850);
+  assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'open', 'second hold did not empty');
+  assert((await chip(page, 'Review mistakes').getAttribute('aria-label')).includes('not done'), 'state not in the name');
   const ms = await page.evaluate(() => window.__ascent.tapToStored);
-  assert(ms.length >= 3 && Math.max(...ms) < 100, `tap to stored: ${ms.map((x) => x.toFixed(1)).join(', ')} ms`);
+  assert(ms.length >= 3 && Math.max(...ms) < 100, `hold to stored: ${ms.map((x) => x.toFixed(1)).join(', ')} ms`);
 });
 
-await test('game: a press under 0.7 s is a tap; holding opens attempted and rest', async (page) => {
+await test('game: a tap opens the options: amount, Mark done, attempted, rest; Undo puts back what was there', async (page) => {
   await startGame(page);
-  await hold(page, chip(page, 'Review mistakes'), 300);
-  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'short press was not a tap');
-  assert(!(await page.locator('dialog.opts[open]').count()), 'short press opened the menu');
-  await hold(page, chip(page, 'Review mistakes'), 850);
+  // A short press is a tap: it never logs, it opens the sheet.
+  await hold(page, chip(page, 'Qbank'), 250);
   await page.locator('dialog.opts[open]').waitFor();
-  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'hold also toggled');
+  assert((await chip(page, 'Qbank').getAttribute('data-state')) === 'open', 'a tap logged something');
+  await page.locator('dialog.opts .opts-amount').fill('10');
+  await page.getByRole('button', { name: 'Save amount' }).click();
+  assert((await chip(page, 'Qbank').textContent()).includes('10/50'), '0 → 10 not saved');
+  await chip(page, 'Qbank').tap();
+  assert((await page.locator('dialog.opts .opts-amount').inputValue()) === '10', 'editor does not show the total so far');
+  await page.locator('dialog.opts .opts-amount').fill('12');
+  await page.getByRole('button', { name: 'Save amount' }).click();
+  assert((await chip(page, 'Qbank').textContent()).includes('12/50'), 'edit total not saved');
+  // Cancel changes nothing.
+  await chip(page, 'Qbank').tap();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  assert((await chip(page, 'Qbank').textContent()).includes('12/50'), 'cancel changed the amount');
+  // Explicit Mark done, then Undo back to 12, not to empty.
+  await chip(page, 'Qbank').tap();
+  await page.getByRole('button', { name: /^Mark done/ }).click();
+  assert((await chip(page, 'Qbank').textContent()).includes('50/50'), 'Mark done did not fill the target');
+  await page.locator('.undo').getByRole('button', { name: 'Undo' }).click();
+  assert((await chip(page, 'Qbank').textContent()).includes('12/50'), 'Undo did not restore 12');
+  // Rest options and attempted on a yes-or-no habit.
+  await chip(page, 'Review mistakes').tap();
   await page.getByRole('button', { name: 'Sick', exact: true }).click();
   assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'skipped', 'sick not saved');
   assert((await chip(page, 'Review mistakes').textContent()).includes('Sick'), 'skip reason not shown');
-  // Attempted with an amount.
-  await hold(page, chip(page, 'Qbank'), 850);
-  await page.locator('dialog.opts .opts-amount').fill('20');
-  await page.getByRole('button', { name: 'Save amount' }).click();
-  assert((await chip(page, 'Qbank').getAttribute('data-state')) === 'attempted', 'amount below the hold point is attempted');
-  assert((await chip(page, 'Qbank').textContent()).includes('20/50'), 'amount not shown');
-  // Attempted on a yes-or-no habit.
-  await hold(page, chip(page, 'Review mistakes'), 850);
+  await chip(page, 'Review mistakes').tap();
   await page.getByRole('button', { name: 'Attempted' }).click();
   assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'attempted', 'binary attempted not saved');
+  await page.locator('.undo').getByRole('button', { name: 'Undo' }).click();
+  assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'skipped', 'Undo did not restore the sick day');
 });
 
-await test('game: keyboard taps with Enter, opens options with Shift+F10, Escape returns focus', async (page) => {
+await test('game: keyboard: Enter opens the options with the amount ready; Mark done; Escape returns focus', async (page) => {
   await startGame(page);
   await chip(page, 'Review mistakes').focus();
   await page.keyboard.press('Enter');
-  assert((await chip(page, 'Review mistakes').getAttribute('aria-checked')) === 'true', 'Enter did not tap');
+  await page.locator('dialog.opts[open]').waitFor();
+  assert((await page.evaluate(() => document.activeElement?.textContent)) === 'Mark done', 'Mark done not focused first');
+  await page.keyboard.press('Enter');
+  assert((await chip(page, 'Review mistakes').getAttribute('data-state')) === 'fulfilled', 'keyboard Mark done failed');
+  assert((await page.evaluate(() => document.activeElement?.classList.contains('gchip'))), 'focus not returned to the chip');
+  await chip(page, 'Qbank').focus();
+  await page.keyboard.press('Enter');
+  assert((await page.evaluate(() => document.activeElement?.classList.contains('opts-amount'))), 'amount not focused from the keyboard');
+  await page.keyboard.type('30');
+  await page.keyboard.press('Enter');
+  assert((await chip(page, 'Qbank').textContent()).includes('30/50'), 'typed amount not saved');
   await page.keyboard.press('Shift+F10');
   await page.locator('dialog.opts[open]').waitFor();
   await page.keyboard.press('Escape');
   assert(!(await page.locator('dialog.opts[open]').count()), 'Escape did not close');
-  assert((await page.evaluate(() => document.activeElement?.classList.contains('gchip'))), 'focus not returned to the chip');
+  assert((await page.evaluate(() => document.activeElement?.classList.contains('gchip'))), 'focus not returned after Escape');
 });
 
 await test('game: screens left to right are Camp, Today, Week, Month, Year', async (page) => {
@@ -370,7 +400,7 @@ await test('game: screens left to right are Camp, Today, Week, Month, Year', asy
 
 await test('game: base camp journal saves and survives a reload; leagues follow tags', async (page) => {
   await startGame(page);
-  await chip(page, 'Qbank').tap();
+  await hold(page, chip(page, 'Qbank'), 850);
   await page.getByRole('button', { name: 'Camp', exact: true }).click();
   assert((await page.getByRole('tab', { name: 'Journal' }).getAttribute('aria-selected')) === 'true', 'base camp should open on the journal');
   await page.getByLabel('Today’s note').fill('Did the qbank before lunch.');
@@ -410,8 +440,11 @@ await test('game: the detail is a full-screen layer with its own title bar; the 
   await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'true');
   const bar = await page.locator('#s-today .below-bar').boundingBox();
   assert(bar.y < 4, `title bar at ${bar.y}`);
-  assert((await page.locator('.screens').evaluate((e) => getComputedStyle(e).opacity)) === '0', 'tabs still over the detail');
-  await page.getByRole('button', { name: 'Back to the today view' }).click();
+  assert(await page.locator('.screens').evaluate((e) => e.inert), 'hidden tabs can still take focus');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.screens')).opacity === '0', null, { timeout: 3000 }).catch(() => {
+    throw new Error('tabs still over the detail');
+  });
+  await page.locator('#s-today').getByRole('button', { name: 'Back to scene' }).click();
   await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'false');
 });
 
@@ -426,7 +459,7 @@ await test('Setup: change the mark and name; watch the opening again', async (pa
   assert(ex.symbol === 'star' && ex.name === 'The long winter', `expedition ${JSON.stringify(ex)}`);
   await sec.getByRole('link', { name: 'Watch the opening again' }).click();
   await page.getByRole('dialog', { name: 'Your mark' }).waitFor();
-  await page.getByRole('button', { name: 'Done' }).click();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.locator('.onboard').waitFor({ state: 'detached' });
   assert((await page.evaluate(() => window.__ascent.app.view().snapshot.expedition.symbol)) === 'star', 'mark lost after the opening');
 });
@@ -435,10 +468,11 @@ await test('game: closing the day plays the reward and says so (with the world)'
   await page.goto(base);
   await startGame(page);
   assert(await page.locator('canvas.world').isVisible(), 'the world did not start');
-  // Keyboard taps: software WebGL stalls the main thread long enough to turn a touch into a hold.
+  // Keyboard: software WebGL stalls the main thread too much for timed holds.
   for (const name of ['Review mistakes', 'Qbank']) {
     await chip(page, name).focus();
     await page.keyboard.press('Enter');
+    await page.getByRole('button', { name: /^Mark done/ }).click();
   }
   await page.waitForFunction(() => document.querySelector('.game > .sr-only')?.textContent?.includes('Camp is made'), null, { timeout: 60_000, polling: 500 });
   assert((await page.locator('#s-today .coach').textContent()).includes('Camp is made'), 'caption did not change');

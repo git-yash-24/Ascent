@@ -84,3 +84,24 @@ export function weatherOf(d: Derived, today: DateKey): Weather {
       return 'calm';
   }
 }
+
+/**
+ * Water reminder policy, shared by the flask and Today's bar: once the flask is not full, a
+ * glass is due two hours after the last one, or from 9 in the morning if none yet today. The
+ * hour is read in the record's time zone (Setup), not whatever the device says. In-app cue only.
+ */
+export function waterDue(w: { today: number; target: number; lastAt: number | null }, now: number, timeZone?: string): boolean {
+  if (w.today >= w.target) return false;
+  if (w.lastAt !== null) return now - w.lastAt >= 120 * 60_000;
+  return hourIn(now, timeZone) >= 9;
+}
+
+export function hourIn(now: number, timeZone?: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, ...(timeZone ? { timeZone } : {}) }).formatToParts(new Date(now));
+    const h = Number(parts.find((p) => p.type === 'hour')?.value);
+    return Number.isFinite(h) ? h % 24 : new Date(now).getHours();
+  } catch {
+    return new Date(now).getHours();
+  }
+}

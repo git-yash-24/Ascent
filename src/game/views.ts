@@ -249,7 +249,7 @@ function verdictLine(verdict: Verdict, score: number, barAt: number): string {
   if (verdict === 'rest') return 'Rest week';
   if (score >= CLIMB.summit) return 'Summit push';
   if (score >= barAt) return 'Climb secured';
-  return `${Math.ceil((barAt - score) * 100)}% to the climb`;
+  return `${Math.round(score * 100)}% of the ${Math.round(barAt * 100)}% the climb needs`;
 }
 
 function short(d: DateKey): string {

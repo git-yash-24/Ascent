@@ -11,9 +11,10 @@
  * (Xander, 2026-10-13.)
  */
 import type { Accent, DateKey, TrailSymbol } from '../core/model/types';
-import { campState, momentumStep, weatherOf } from '../core/world';
+import { campState, momentumStep, waterDue, weatherOf } from '../core/world';
 import { ACCENTS } from './kit';
 import { markPicker } from './onboard';
+import { onMotionChange, reducedMotion, scrollBehavior, setMotionSetting } from '../ui/motion';
 import type { Controller, View } from '../ui/controller';
 import { h } from '../ui/dom';
 import { BaseCampSheet } from './basecamp';
@@ -62,7 +63,8 @@ export class GameView {
   private playing: { timer: number; date: DateKey } | null = null;
   private idleTimer = 0;
   private onboarding: HTMLElement | null = null;
-  private revealed = new Set<string>();
+  private readonly nav: HTMLElement;
+  private modalOpener: HTMLElement | null = null;
   private campReady = false;
 
   constructor(private readonly app: Controller) {
@@ -80,6 +82,7 @@ export class GameView {
       year: new YearSheet(),
     };
     const nav = h('nav', { class: 'screens glass', 'aria-label': 'Screens' });
+    this.nav = nav;
     this.pager = h('div', { class: 'pager' });
     SCREENS.forEach((s, i) => {
       const b = h('button', { class: 'screen-btn', type: 'button', 'aria-controls': `s-${s}` }, LABEL[s]);
@@ -100,7 +103,7 @@ export class GameView {
             'div',
             { class: 'below-bar' },
             h('span', { class: 'below-t', text: NAME[s] }),
-            h('button', { class: 'below-up', type: 'button', 'aria-label': `Back to the ${LABEL[s].toLowerCase()} view`, onclick: () => panel.scrollTo({ top: 0, behavior: 'smooth' }) }, chevron()),
+            h('button', { class: 'below-up', type: 'button', onclick: () => panel.scrollTo({ top: 0, behavior: scrollBehavior() }) }, chevron(), h('span', { text: 'Back to scene' })),
           ),
           sheet.detail,
         ),
@@ -127,7 +130,11 @@ export class GameView {
 
     // The replay: letterbox and one caption at a time.
     this.reel = h('div', { class: 'reel', hidden: true, role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Replay of the day' });
-    this.reel.addEventListener('click', () => this.stopDay());
+    // Only the backdrop and the letterbox close it; the caption and anything on it do not.
+    this.reel.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t === this.reel || t.classList.contains('bars')) this.stopDay();
+    });
     this.reel.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.stopDay();
     });
@@ -145,11 +152,14 @@ export class GameView {
     for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(ev, wake, { passive: true });
     wake();
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') window.setTimeout(() => this.maybeGreet(), 900);
+      if (document.visibilityState === 'visible') {
+        window.setTimeout(() => this.maybeGreet(), 900);
+        this.scheduleReveal(1500);
+      } else this.interruptReveal();
     });
     window.addEventListener('resize', () => this.go(this.index, false));
     window.addEventListener('keydown', (e) => {
-      if (!this.root.isConnected || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || document.querySelector('dialog[open]')) return;
+      if (!this.root.isConnected || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || document.querySelector('dialog[open]') || this.playing || this.onboarding) return;
       if (e.key === 'PageDown' && e.altKey) this.go(this.index + 1, true);
       if (e.key === 'PageUp' && e.altKey) this.go(this.index - 1, true);
     });
@@ -160,14 +170,20 @@ export class GameView {
     const v = this.app.view();
     if (!this.mounted) {
       this.mounted = true;
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches || (v.snapshot.profile?.settings.reducedMotion ?? false);
+      setMotionSetting(v.snapshot.profile?.settings.reducedMotion ?? false);
+      const reduced = reducedMotion();
       // ?world=off runs the screens on the painted sky (tests, very slow devices).
       const off = new URLSearchParams(location.search).get('world') === 'off';
       this.stage = off ? null : Stage.create(this.canvas, { reducedMotion: reduced });
       if (!this.stage) {
         this.canvas.hidden = true;
         this.fallback.hidden = false;
-      } else this.stage.onFrame = () => this.placeLabels();
+        // Pins and "you are here" need the world to stand on.
+        this.labels.hidden = true;
+      } else {
+        this.stage.onFrame = () => this.placeLabels();
+        onMotionChange((r) => this.stage?.setReduced(r));
+      }
     }
     this.index = SCREENS.indexOf(screen);
     requestAnimationFrame(() => this.go(this.index, false));
@@ -228,6 +244,8 @@ export class GameView {
     this.onboarding = layer;
     this.root.append(layer);
     this.root.classList.add('onboarding');
+    this.setModal(true);
+    this.interruptReveal();
     document.body.classList.remove('hud-idle');
     const show = (): void => {
       title.classList.add('gone');
@@ -246,6 +264,25 @@ export class GameView {
     this.onboarding = null;
     this.root.classList.remove('onboarding');
     this.stage?.skipIntro();
+    this.setModal(false);
+    // Land on the checklist, ready to log.
+    (this.panels[this.index]?.querySelector('.gchip, button, a') as HTMLElement | null)?.focus({ preventScroll: true });
+    this.scheduleReveal(1200);
+  }
+
+  /**
+   * A full-screen moment (the opening, a replay) is a real modal: everything behind it is inert,
+   * so focus and touches cannot reach it; focus goes back where it was when it ends.
+   */
+  private setModal(on: boolean): void {
+    const behind: Array<Element | null> = [this.pager, this.nav, this.flask, this.labels, document.querySelector('header.top')];
+    if (on && !this.modalOpener) this.modalOpener = document.activeElement as HTMLElement | null;
+    for (const el of behind) if (el) (el as HTMLElement & { inert: boolean }).inert = on;
+    if (!on) {
+      this.panels.forEach((p, i) => ((p as HTMLElement & { inert: boolean }).inert = i !== this.index));
+      this.syncLifted();
+      this.modalOpener = null;
+    }
   }
 
   /** Show a mark on the camp while it is being chosen. */
@@ -253,26 +290,56 @@ export class GameView {
     this.stage?.setExpedition(m.symbol, ACCENTS[m.accent ?? 'ash']);
   }
 
-  /** The travelling home: improvements earned by story days; a new one is shown being found. */
+  /**
+   * The travelling home: improvements earned by story days. Earned is the record; shown is
+   * separate. A new one waits until you are on Camp or Today with nothing else on screen, plays,
+   * and only then counts as seen. Leaving mid-reveal keeps it waiting. Several at once play
+   * the newest and name them all.
+   */
   private renderCamp(v: View): void {
     if (!this.stage) return;
     const camp = campState(v.derived.storyDayEarned);
     const ids = camp.built.map((i) => i.id);
     this.stage.setCamp(ids);
-    const fresh = ids.filter((id) => !v.snapshot.seen.moments.includes(`camp:${id}`) && !this.revealed.has(id));
-    if (fresh.length === 0) {
-      this.campReady = true;
-      return;
-    }
-    // Reveal only the newest, and only on the Today or Camp screens once the world is up.
-    const id = fresh.at(-1)!;
-    if (this.index <= 1 && !this.onboarding && !this.playing) {
-      for (const f of fresh) this.revealed.add(f);
-      window.setTimeout(() => this.stage?.reveal(id), this.campReady ? 400 : 2200);
-      for (const f of fresh) this.app.markSeen(`camp:${f}`);
-      this.say(`New at camp: ${camp.built.find((i) => i.id === id)?.name ?? 'something'}.`);
-    }
+    const fresh = ids.filter((id) => !v.snapshot.seen.moments.includes(`camp:${id}`));
+    this.pendingReveal = fresh.length ? { ids: fresh, names: fresh.map((id) => camp.built.find((i) => i.id === id)?.name ?? id) } : null;
+    this.scheduleReveal(this.campReady ? 400 : 2200);
     this.campReady = true;
+  }
+
+  private pendingReveal: { ids: string[]; names: string[] } | null = null;
+  private revealTimer = 0;
+  private revealing = false;
+
+  private canReveal(): boolean {
+    return this.index <= 1 && !this.onboarding && !this.playing && document.visibilityState === 'visible' && this.root.dataset.lifted !== 'true' && !document.querySelector('dialog[open]') && this.root.isConnected;
+  }
+
+  private scheduleReveal(ms: number): void {
+    if (!this.pendingReveal || this.revealing) return;
+    window.clearTimeout(this.revealTimer);
+    this.revealTimer = window.setTimeout(() => {
+      const p = this.pendingReveal;
+      if (!p || this.revealing || !this.stage) return;
+      // Checked when it would play, not when it was earned.
+      if (!this.canReveal()) return;
+      this.revealing = true;
+      const newest = p.ids.at(-1)!;
+      this.say(p.names.length > 1 ? `New at camp: ${p.names.join(', ')}.` : `New at camp: ${p.names[0]}.`);
+      this.stage.reveal(newest, (shown) => {
+        this.revealing = false;
+        if (shown) {
+          for (const id of p.ids) this.app.markSeen(`camp:${id}`);
+          if (this.pendingReveal === p) this.pendingReveal = null;
+        }
+      });
+    }, ms);
+  }
+
+  /** You moved on: a reveal mid-play is cut short and stays waiting. */
+  private interruptReveal(): void {
+    window.clearTimeout(this.revealTimer);
+    if (this.revealing) this.stage?.cancelReveal();
   }
 
   private dirty = new Set<number>();
@@ -297,6 +364,7 @@ export class GameView {
       this.stage.setWeek(days);
       this.stage.setStage(v.derived.climb.stage);
       this.stage.setSound(v.snapshot.profile?.settings.sound ?? true);
+      setMotionSetting(v.snapshot.profile?.settings.reducedMotion ?? false);
       this.stage.setWeather(weatherOf(v.derived, v.today));
       this.stage.setMomentum(momentumStep(v.derived, v.today));
       const ex = v.snapshot.expedition;
@@ -321,7 +389,7 @@ export class GameView {
   go(i: number, smooth: boolean): void {
     const n = Math.max(0, Math.min(SCREENS.length - 1, i));
     const w = this.pager.clientWidth;
-    if (w > 0) this.pager.scrollTo({ left: n * w, behavior: smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'smooth' : 'auto' });
+    if (w > 0) this.pager.scrollTo({ left: n * w, behavior: smooth ? scrollBehavior() : 'auto' });
     this.settle(n);
     this.stage?.setView(smooth ? this.pager.scrollLeft / Math.max(1, w) : n);
   }
@@ -346,8 +414,7 @@ export class GameView {
       this.flask.classList.add('gulp');
     }
     this.lastGlasses = w.today;
-    const since = w.lastAt === null ? null : (Date.now() - w.lastAt) / 60_000;
-    const due = w.today < w.target && (since === null ? new Date().getHours() >= 9 : since >= 120);
+    const due = waterDue(w, Date.now(), this.app.view().snapshot.profile?.settings.timeZone);
     this.flask.dataset.due = String(due);
     this.flask.style.setProperty('--level', String(Math.min(1, w.today / Math.max(1, w.target))));
     (this.flask.querySelector('.flask-n') as HTMLElement).textContent = `${w.today}/${w.target}`;
@@ -446,10 +513,13 @@ export class GameView {
     const bar = h('div', { class: 'reel-progress' });
     const card = h('div', { class: 'reel-card glass', 'aria-live': 'polite' });
     const skip = h('button', { class: 'reel-skip', type: 'button', text: 'Close' });
+    skip.addEventListener('click', () => this.stopDay());
     this.reel.replaceChildren(h('div', { class: 'bars top' }), h('div', { class: 'bars bottom' }), card, bar, skip);
     for (let i = 0; i < cards.length; i++) bar.append(h('span', {}));
     this.reel.hidden = false;
     this.root.classList.add('replaying');
+    this.interruptReveal();
+    this.setModal(true);
     skip.focus();
     let k = 0;
     const show = (c: Card): void => {
@@ -482,6 +552,8 @@ export class GameView {
     this.stage?.endMontage();
     this.reel.hidden = true;
     this.root.classList.remove('replaying');
+    this.setModal(false);
+    this.scheduleReveal(900);
     if (refocus) (this.dayLabels.get(date) && this.index === 2 ? this.dayLabels.get(date) : (this.panels[this.index]?.querySelector(`[data-date="${date}"]`) as HTMLElement | null))?.focus();
   }
 
@@ -491,6 +563,8 @@ export class GameView {
     if (n !== this.index) {
       this.index = n;
       this.stage?.whoosh();
+      if (n > 1) this.interruptReveal();
+      else this.scheduleReveal(900);
     }
     this.fresh(n);
     this.navButtons.forEach((b, i) => b.setAttribute('aria-current', i === n ? 'page' : 'false'));
@@ -529,10 +603,30 @@ export class GameView {
     if (i !== this.index) return;
     const p = this.panels[i]!;
     const fold = (p.firstElementChild as HTMLElement | null)?.offsetHeight ?? 600;
-    const lift = Math.min(1, p.scrollTop / Math.max(1, fold * 0.6));
-    this.stage?.setDimmed(lift >= 1);
-    this.root.style.setProperty('--lift', String(lift));
-    this.root.dataset.lifted = String(lift > 0.55);
+    // Three separate things: how far the detail covers the world (the shade follows it), whether
+    // the detail has reached the top (then its own bar takes over from the tabs), and whether
+    // the world is fully hidden (then it can stop drawing).
+    const cover = Math.min(1, p.scrollTop / Math.max(1, fold));
+    this.stage?.setDimmed(cover >= 1);
+    this.root.style.setProperty('--lift', String(cover));
+    const lifted = p.scrollTop > fold - 96;
+    if ((this.root.dataset.lifted === 'true') !== lifted) {
+      this.root.dataset.lifted = String(lifted);
+      this.syncLifted();
+      if (lifted) this.interruptReveal();
+      else this.scheduleReveal(900);
+    }
+  }
+
+  /** While the detail is up, the tabs, flask and gear are out of reach: hidden and inert alike. */
+  private syncLifted(): void {
+    const lifted = this.root.dataset.lifted === 'true';
+    const hud: Array<Element | null> = [this.nav, this.flask, document.querySelector('header.top .nav')];
+    if (lifted && hud.some((el) => el?.contains(document.activeElement))) {
+      (this.panels[this.index]?.querySelector('.below-up') as HTMLElement | null)?.focus({ preventScroll: true });
+    }
+    if (this.onboarding || this.playing) return;
+    for (const el of hud) if (el) (el as HTMLElement & { inert: boolean }).inert = lifted;
   }
 
   private pendingSay = '';

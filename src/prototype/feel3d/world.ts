@@ -258,6 +258,25 @@ function radialTexture(inner: string, outer: string): THREE.CanvasTexture {
 
 export const glowTexture = (): THREE.CanvasTexture => radialTexture('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
 
+/** A round particle with a soft rim: points drawn with it read as flakes and sparks, not squares. */
+let dot: THREE.CanvasTexture | null = null;
+export function dotTexture(): THREE.CanvasTexture {
+  if (dot) return dot;
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.55, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(16, 16, 16, 0, Math.PI * 2);
+  g.fill();
+  dot = new THREE.CanvasTexture(c);
+  return dot;
+}
+
 /** Dusk sky: a gradient dome plus faint first stars. */
 function buildSky(): THREE.Group {
   const g = new THREE.Group();
@@ -295,7 +314,7 @@ function buildSky(): THREE.Group {
   }
   const sg = new THREE.BufferGeometry();
   sg.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
-  const stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: '#cfd6ff', size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0.55, fog: false, depthWrite: false }));
+  const stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: '#cfd6ff', size: 2.6, sizeAttenuation: false, map: dotTexture(), transparent: true, opacity: 0.55, fog: false, depthWrite: false }));
   g.add(stars);
   return g;
 }
