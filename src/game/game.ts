@@ -155,7 +155,9 @@ export class GameView {
       this.idleTimer = window.setTimeout(() => this.rest(), 4500);
     };
     for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focusin']) window.addEventListener(ev, wake, { passive: true, capture: true });
-    // The Environment Lab (Setup → About, once unlocked).
+    // Water due-ness (and her tiredness) moves with the clock, not only with the record.
+    window.setInterval(() => this.lastView && this.root.isConnected && this.renderFlask(this.lastView), 60_000);
+        // The Environment Lab (Setup → About, once unlocked).
     window.addEventListener('ascent:lab', () => this.showLab());
     wake();
     document.addEventListener('visibilitychange', () => {
@@ -468,7 +470,9 @@ export class GameView {
     const due = waterDue(w, Date.now(), this.app.view().snapshot.profile?.settings.timeZone);
     this.flask.dataset.due = String(due);
     this.flask.style.setProperty('--level', String(Math.min(1, w.today / Math.max(1, w.target))));
-    this.stage?.setFlaskLevel(w.today / Math.max(1, w.target));
+    // The tin shows what is left to drink today; the corner ring shows what you have had.
+    this.stage?.setFlaskLevel(1 - w.today / Math.max(1, w.target));
+    this.stage?.setWater({ today: w.today, target: w.target, due, sinceMin: w.lastAt === null ? null : (Date.now() - w.lastAt) / 60_000 });
     (this.flask.querySelector('.flask-n') as HTMLElement).textContent = `${w.today}/${w.target}`;
     const ring = this.flask.querySelector('.flask-ring') as HTMLElement;
     if (ring.dataset.k !== `${w.today}/${w.target}`) {

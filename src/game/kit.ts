@@ -111,7 +111,8 @@ export interface Kit {
   setBuilt(ids: string[]): void;
   /** World position of an improvement, for the reveal shot. */
   where(id: string): THREE.Vector3 | null;
-  update(t: number): void;
+  /** `wind` 0..1: how hard the flag and pennants move. */
+  update(t: number, wind?: number): void;
 }
 
 export function buildKit(scene: THREE.Scene): Kit {
@@ -298,12 +299,14 @@ export function buildKit(scene: THREE.Scene): Kit {
       const b = new THREE.Box3().setFromObject(o);
       return b.getCenter(new THREE.Vector3());
     },
-    update(t) {
-      // The flag moves in the wind.
+    update(t, wind = 0.25) {
+      // The flag moves in the shared wind: faster and wider in a gust.
       const pa = clothGeo.attributes.position as THREE.BufferAttribute;
+      const amp = 0.02 + wind * 0.09;
+      const sp = 2 + wind * 5;
       for (let i = 0; i < pa.count; i++) {
         const x = base[i * 3] ?? 0;
-        pa.setZ(i, Math.sin(t * 3 + x * 9) * 0.04 * x * 2.2);
+        pa.setZ(i, Math.sin(t * sp + x * 9) * amp * x * 2.2);
       }
       pa.needsUpdate = true;
     },

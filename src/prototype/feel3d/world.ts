@@ -79,6 +79,24 @@ function buildTrees(): THREE.Group {
   const count = 340;
   const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: '#3b2c22', flatShading: true }), count);
   const crownMat = new THREE.MeshLambertMaterial({ color: '#28372c', flatShading: true });
+  // Crowns sway in the shared wind: bent in world space by height, each tree on its own phase.
+  crownMat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWind = treeWind.wind;
+    shader.uniforms.uTime = treeWind.time;
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'uniform vec2 uWind; uniform float uTime;\nvoid main() {')
+      .replace(
+        '#include <project_vertex>',
+        THREE.ShaderChunk.project_vertex.replace(
+          'mvPosition = modelViewMatrix * mvPosition;',
+          `vec4 wp = modelMatrix * mvPosition;
+          float hgt = max(0.0, transformed.y - 1.0);
+          float ph = wp.x * 0.13 + wp.z * 0.11;
+          wp.xz += uWind * hgt * hgt * 0.035 * (0.65 + 0.35 * sin(uTime * 1.9 + ph));
+          mvPosition = viewMatrix * wp;`,
+        ),
+      );
+  };
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, count);
   const crowns2 = new THREE.InstancedMesh(crown2, crownMat, count);
   const rnd = mulberry32(21);
@@ -290,15 +308,26 @@ function buildSky(): THREE.Group {
       mid: { value: new THREE.Color('#4a3a5c') },
       horizon: { value: new THREE.Color('#d8875a') },
       sunDir: { value: new THREE.Vector3(-0.9, 0.05, -0.4).normalize() },
+      sunColor: { value: new THREE.Color('#ff9a5c') },
+      sunDisc: { value: 0 },
+      moonDir: { value: new THREE.Vector3(0.5, 0.6, 0.3).normalize() },
+      moonI: { value: 0 },
     },
     vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
-    fragmentShader: `uniform vec3 zenith; uniform vec3 mid; uniform vec3 horizon; uniform vec3 sunDir; varying vec3 vDir;
+    // The dome follows the sun: a warm glow on the horizon toward it, a halo, the disc when it
+    // is up; at night a pale moon. Everything is continuous in the sun's position.
+    fragmentShader: `uniform vec3 zenith; uniform vec3 mid; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunColor; uniform float sunDisc; uniform vec3 moonDir; uniform float moonI; varying vec3 vDir;
       void main(){
-        float h = clamp(vDir.y, -0.2, 1.0);
+        vec3 d = normalize(vDir);
+        float h = clamp(d.y, -0.2, 1.0);
         vec3 col = mix(horizon, mid, smoothstep(0.0, 0.18, h));
         col = mix(col, zenith, smoothstep(0.12, 0.65, h));
-        float sun = pow(max(dot(normalize(vDir), sunDir), 0.0), 6.0);
-        col += vec3(0.55, 0.28, 0.12) * sun * (1.0 - smoothstep(0.0, 0.35, h));
+        float s = max(dot(d, sunDir), 0.0);
+        float low = 1.0 - smoothstep(0.0, 0.45, h);
+        col += sunColor * (pow(s, 6.0) * 0.45 * low + pow(s, 48.0) * 0.35 * sunDisc);
+        col += sunColor * smoothstep(0.99935, 0.9997, s) * sunDisc * 1.6;
+        float m = max(dot(d, moonDir), 0.0);
+        col += vec3(0.86, 0.9, 1.0) * smoothstep(0.99955, 0.99975, m) * moonI + vec3(0.2, 0.25, 0.4) * pow(m, 120.0) * moonI * 0.5;
         if (h < 0.0) col = mix(horizon * 0.6, horizon, 1.0 + h * 5.0);
         gl_FragColor = vec4(col, 1.0);
       }`,
@@ -319,8 +348,13 @@ function buildSky(): THREE.Group {
   return g;
 }
 
+/** Shared by every tree crown: the wind (x, z, world units) and the time. */
+export const treeWind = { wind: { value: new THREE.Vector2(0, 0) }, time: { value: 0 } };
+
 export interface World {
   group: THREE.Group;
+  /** The sky shader's sun and moon. */
+  skySun: { dir: THREE.Vector3; color: THREE.Color; disc: { value: number }; moonDir: THREE.Vector3; moonI: { value: number } };
   summitLight: THREE.Sprite;
   /** The sky dome's colours, for time of day. */
   sky: { zenith: THREE.Color; mid: THREE.Color; horizon: THREE.Color };
@@ -355,6 +389,13 @@ export function buildWorld(scene: THREE.Scene): World {
     summitLight,
     sky: { zenith: skyMat.uniforms.zenith!.value as THREE.Color, mid: skyMat.uniforms.mid!.value as THREE.Color, horizon: skyMat.uniforms.horizon!.value as THREE.Color },
     stars: starMat,
+    skySun: {
+      dir: skyMat.uniforms.sunDir!.value as THREE.Vector3,
+      color: skyMat.uniforms.sunColor!.value as THREE.Color,
+      disc: skyMat.uniforms.sunDisc as { value: number },
+      moonDir: skyMat.uniforms.moonDir!.value as THREE.Vector3,
+      moonI: skyMat.uniforms.moonI as { value: number },
+    },
     update(t: number) {
       // Two slow green flashes every 7 seconds, then a faint steady glow.
       const cycle = t % 7;

@@ -14,7 +14,9 @@
  * The checklist never waits on any of this; without WebGL the screens run on a painted sky.
  */
 import * as THREE from 'three';
-import { buildWorld, dotTexture, glowTexture, groundHeight, pathX } from '../prototype/feel3d/world';
+import { buildWorld, dotTexture, glowTexture, groundHeight, pathX, treeWind } from '../prototype/feel3d/world';
+import { coverFor, dayOfYear, skyFor, sunAt, Wind } from './sky';
+import { Clouds } from './clouds';
 import { buildCamp } from '../prototype/feel3d/camp';
 import { buildClimber, POSES, lerpPose, walkPose, type Climber, type Joint, type Pose } from '../prototype/feel3d/climber';
 import { RISE, SCRIPT, type Rot } from '../prototype/shared/poses';
@@ -43,7 +45,7 @@ const WALK_TO = DAY_GAP - 1.6;
 const FRAME_SHIFT = 0.07;
 
 type Phase = 'sit' | 'rise' | 'walk' | 'stand';
-type ActKind = 'drink' | 'nod' | 'look' | 'greet' | 'reveal' | 'offer' | 'warm' | 'tend' | 'route';
+type ActKind = 'drink' | 'nod' | 'look' | 'greet' | 'reveal' | 'offer' | 'warm' | 'tend' | 'route' | 'neck' | 'brow' | 'stretch';
 interface Act {
   kind: ActKind;
   start: number;
@@ -105,6 +107,15 @@ export class Stage {
   private offerFrom: THREE.Vector3 | null = null;
   /** The flask close-up: she holds it up for you to look at. */
   private inspecting = false;
+  /**
+   * Water's cause and effect (Xander, 13 Oct): how tired she looks, 0 fresh to 1 worn. It drifts
+   * toward a target set by the water record, drops when she drinks, and is presentation only:
+   * it never touches the story, the climb or any habit. Gentle by design: never distress.
+   */
+  private fatigue = 0.2;
+  private fatigueTarget = 0.2;
+  private breathPhase = 0;
+  private waterFull = false;
   /** Called once the reveal has played to its end (true) or was cut short (false). */
   private revealDone: ((shown: boolean) => void) | null = null;
   private steamT = -1;
@@ -115,7 +126,19 @@ export class Stage {
   private recordWeather: Weather = 'calm';
   /** Frame time, smoothed (ms), for the Lab's readout. */
   frameMs = 16;
-  private skyTimer = 99;
+  /** Phase 3: one wind, one cloud layer, the sun's state for this frame. */
+  readonly wind = new Wind();
+  private readonly clouds: Clouds;
+  sunElev = 0;
+  /**
+   * Quality for this device, stepped by measured frame time (target: a mid-range 2026 phone).
+   * 2 high: sun shadows 2048. 1 standard: 1024. 0 light: no sun shadow, lower resolution.
+   */
+  tier = 1;
+  private tierClock = 0;
+  private tierSlow = 0;
+  private tierFast = 0;
+  private tierLocked = false;
   private hemiBase = 1.35;
   private teaByClose = false;
   private soundOn = true;
@@ -180,10 +203,20 @@ export class Stage {
     this.scene.fog = new THREE.Fog('#5a4b5e', 30, 1300);
     this.hemi = new THREE.HemisphereLight('#7a7eac', '#2e261b', 1.35);
     this.scene.add(this.hemi);
+    // The key light: the sun by day, the moon by night (one light, so one shadow), aimed at camp.
     const lastLight = new THREE.DirectionalLight('#ffb27a', 0.9);
     lastLight.position.set(-80, 18, -40);
-    this.scene.add(lastLight);
+    lastLight.shadow.camera.left = -8;
+    lastLight.shadow.camera.right = 8;
+    lastLight.shadow.camera.top = 8;
+    lastLight.shadow.camera.bottom = -8;
+    lastLight.shadow.camera.near = 1;
+    lastLight.shadow.camera.far = 140;
+    lastLight.shadow.bias = -0.0006;
+    lastLight.shadow.normalBias = 0.03;
+    this.scene.add(lastLight, lastLight.target);
     this.lastLight = lastLight;
+    this.clouds = new Clouds(this.scene);
     // A cool rim from behind and above the camp: it separates Ari's shoulders, arms and hood
     // from the dark slope without lifting the whole night.
     const rim = new THREE.DirectionalLight('#9db4ff', 0.55);
@@ -222,6 +255,8 @@ export class Stage {
     const h = new URLSearchParams(location.search).get('hour');
     if (h !== null && Number.isFinite(Number(h))) this.hourOverride = Number(h);
     this.snow = this.buildSnow();
+    const q = new URLSearchParams(location.search).get('quality');
+    this.setTier(q === 'high' ? 2 : q === 'low' ? 0 : 1, q !== null);
 
     const start = (): void => {
       if (!this.sound.started && this.soundOn) void this.sound.start();
@@ -411,10 +446,37 @@ export class Stage {
     if (!on && !this.acts.some((a) => a.kind === 'drink')) this.holster();
   }
 
+  /**
+   * The water record, for her tiredness: what is left to drink today, whether a glass is due,
+   * and how long since the last one. A full flask means fresh.
+   */
+  setWater(w: { today: number; target: number; due: boolean; sinceMin: number | null }): void {
+    const left = w.target > 0 ? Math.max(0, 1 - w.today / w.target) : 0;
+    const full = w.today >= w.target && w.target > 0;
+    const long = w.sinceMin === null ? 0 : Math.max(0, Math.min(1, (w.sinceMin - 120) / 240));
+    this.fatigueTarget = full ? 0.05 : Math.min(0.75, left * 0.4 + (w.due ? 0.25 : 0) + long * 0.15);
+    // Reaching the goal: a long stretch, once.
+    if (full && !this.waterFull && this.last > 0) this.later(() => this.act('stretch', 3.4), 4200);
+    this.waterFull = full;
+  }
+
+  private later(fn: () => void, ms: number): void {
+    window.setTimeout(() => {
+      if (!this.intro && !this.montage && this.phase === 'sit' && !this.reduced) fn();
+    }, ms);
+  }
+
   /** Her own small routine between your visits: never during anything else, on a cooldown. */
   private ambient(): void {
     if (this.reduced || this.intro || this.montage || this.phase !== 'sit' || this.view > 1.5 || this.acts.length) return;
     if (this.clock < this.nextAmbient) return;
+    // Tired: a hand to the back of her neck, or the back of a glove across her brow.
+    if (this.fatigue > 0.45 && Math.random() < this.fatigue) {
+      const t = Math.random() < 0.5 ? 'neck' : 'brow';
+      this.act(t, t === 'neck' ? 3 : 2.4);
+      this.nextAmbient = this.clock + 18 + Math.random() * 20;
+      return;
+    }
     const pick = (['warm', 'tend', 'route'] as const)[Math.floor(Math.random() * 3)]!;
     // Warming hands is for cold weather or a low fire; otherwise tend it or check the route.
     const kind = pick === 'warm' && this.weather === 'clear' && this.camp.fire.level > 0.6 ? 'tend' : pick;
@@ -432,7 +494,6 @@ export class Stage {
   /** Environment Lab: preview the light at any hour (null: your clock again). Writes nothing. */
   previewHour(h: number | null): void {
     this.hourOverride = h;
-    this.skyTimer = 99;
   }
 
   /** Environment Lab: preview a weather (null: the record's again). Writes nothing. */
@@ -697,12 +758,13 @@ export class Stage {
     const c = this.camera.position;
     const t = this.clock;
     // The week's weather: sparse when climbing, thicker when holding, driven sideways in a storm.
-    const wx = this.intro ? 1.2 : this.weather === 'storm' ? 2.4 : this.weather === 'snow' ? 0.5 : 0.15;
+    const wx = this.intro ? 1.2 : this.wind.dir.x * this.wind.strength * 2.6;
+    const wz = this.intro ? 0.15 : this.wind.dir.y * this.wind.strength * 2.6;
     const fall = this.intro ? 1.6 : this.weather === 'storm' ? 2.2 : this.weather === 'snow' ? 1.3 : 1;
     for (let i = 0; i < a.count; i++) {
       let x = a.getX(i) + (Math.sin(t * 0.7 + i) * 0.2 + wx) * dt;
       let y = a.getY(i) - (0.35 + (i % 7) * 0.05) * fall * dt;
-      let z = a.getZ(i) + 0.15 * dt;
+      let z = a.getZ(i) + (0.05 + wz) * dt;
       if (y < c.y - 9) y += 18;
       if (x < c.x - 15) x += 30;
       else if (x > c.x + 15) x -= 30;
@@ -861,6 +923,8 @@ export class Stage {
         this.sound.sigh();
         this.puff(1.6);
         this.reliefT = 0;
+        // Relief you can see: she straightens, and stays fresher for a while.
+        this.fatigue = Math.max(0, this.fatigue - 0.35);
         const at = new THREE.Vector3();
         c.joints.spine.getWorldPosition(at);
         for (let i = 0; i < 12; i++) {
@@ -928,6 +992,33 @@ export class Stage {
     // The close-up: the flask held up in front of her, turned toward you.
     if (this.inspecting && !drinking) {
       pose = blendJ(pose, { shoulderR: [-1.15, 0, 0.35], elbowR: [-1.75, 0, 0], head: [0.2, -0.2, 0], neck: [0.05, 0, 0] }, 1);
+    }
+
+    // Tiredness from going without water: shoulders down, a heavier head. Never during a drink.
+    const f = smooth(clamp01(this.fatigue)) * (drinking ? 0.3 : 1);
+    if (f > 0.02 && this.phase === 'sit') {
+      pose = blendJ(pose, { spine: add(pose.j.spine, [0.22, 0, 0]), neck: add(pose.j.neck, [0.1, 0, 0]), head: add(pose.j.head, [0.2, 0, 0]), shoulderL: add(pose.j.shoulderL, [0.12, 0, 0.06]), shoulderR: add(pose.j.shoulderR, [0.12, 0, -0.06]) }, f);
+    }
+    const neckT = this.actT('neck');
+    if (neckT >= 0) {
+      const w = smooth(clamp01(neckT / 0.6)) * (1 - smooth(clamp01((neckT - 2.2) / 0.7)));
+      const rub = Math.sin(neckT * 6) * 0.1 * clamp01((neckT - 0.6) / 0.3);
+      pose = blendJ(pose, { shoulderR: [-2.6, 0, 0.75], elbowR: [-2.25 + rub, 0, 0], head: [0.42, 0.15, 0.14], neck: [0.2, 0, 0] }, w);
+    }
+    const browT = this.actT('brow');
+    if (browT >= 0) {
+      const w = smooth(clamp01(browT / 0.5)) * (1 - smooth(clamp01((browT - 1.7) / 0.6)));
+      const sweep = Math.sin(clamp01((browT - 0.5) / 0.9) * Math.PI) * 0.35;
+      pose = blendJ(pose, { shoulderL: [-2.25, 0, -0.5 - sweep], elbowL: [-2.05, 0, 0], head: [-0.15, -0.1, 0] }, w);
+    }
+    const stretchT = this.actT('stretch');
+    if (stretchT >= 0) {
+      const w = smooth(clamp01(stretchT / 0.8)) * (1 - smooth(clamp01((stretchT - 2.4) / 0.9)));
+      pose = blendJ(pose, { spine: [-0.18, 0, 0], neck: [-0.15, 0, 0], head: [-0.4, 0, 0], shoulderL: [-2.9, 0, -0.25], elbowL: [-0.2, 0, 0], shoulderR: [-2.9, 0, 0.25], elbowR: [-0.2, 0, 0] }, w);
+      this.cue(stretchT, 1.6, () => {
+        this.sound.sigh();
+        this.puff(1.3);
+      }, 'stretch');
     }
 
     // A nod when a habit is done.
@@ -1065,26 +1156,95 @@ export class Stage {
     return { shot: segs[k]![1](), cut: isCut };
   }
 
-  /** Sky, fog and light by the hour of your clock (?hour= overrides it for review). */
-  private applySky(): void {
+  /**
+   * The light pipeline, every frame: your clock → the sun → sky dome, key light and its shadow,
+   * ambient, fog, clouds, stars; the wind drives snow, trees, flag, flames and sound. All of it
+   * continuous in time, so the Lab's dial can scrub from 04:00 to 04:00 without a jump.
+   * (?hour= or the Lab override the clock for review; nothing here writes anything.)
+   */
+  private applyLight(dt: number): void {
     const now = new Date();
-    const hour = this.hourOverride ?? now.getHours() + now.getMinutes() / 60;
-    const k = skyAt(hour);
+    const hour = this.hourOverride ?? now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    const sun = sunAt(hour, dayOfYear(now));
+    this.sunElev = sun.elev;
+    const storm = this.weather === 'storm' ? 1 : 0;
+    const look = skyFor(sun.elev, this.clouds.cover, storm);
     const sky = this.world.sky;
-    sky.zenith.set(k.zenith);
-    sky.mid.set(k.mid);
-    sky.horizon.set(k.horizon);
-    this.world.stars.opacity = k.stars;
+    sky.zenith.copy(look.zenith);
+    sky.mid.copy(look.mid);
+    sky.horizon.copy(look.horizon);
+    const ss = this.world.skySun;
+    ss.dir.copy(sun.dir);
+    ss.color.copy(look.sun);
+    ss.disc.value = Math.max(0, Math.min(1, (sun.elev + 1.5) / 2.5)) * (1 - this.clouds.cover * 0.85);
+    ss.moonDir.copy(sun.moon);
+    ss.moonI.value = look.moonI * 3 * (1 - this.clouds.cover * 0.8);
+    this.world.stars.opacity = look.stars;
     const fog = this.scene.fog as THREE.Fog;
-    fog.color.copy(k.fog);
-    const storm = this.weather === 'storm' && this.view < 1.6;
-    fog.near = storm ? 8 : 30;
-    fog.far = storm ? 420 : 1300;
-    this.hemi.color.copy(k.hemiSky);
-    this.hemi.groundColor.copy(k.hemiGround);
-    this.hemiBase = k.hemi;
-    this.lastLight.color.copy(k.sun);
-    this.lastLight.intensity = k.sunI;
+    fog.color.copy(look.fog);
+    const near = this.view < 1.6;
+    fog.near = storm && near ? 8 : this.weather === 'snow' && near ? 18 : 30;
+    fog.far = storm && near ? 420 : this.weather === 'snow' && near ? 800 : 1300;
+    this.hemi.color.copy(look.hemiSky);
+    this.hemi.groundColor.copy(look.hemiGround);
+    this.hemiBase = look.hemi;
+    // Key light: the sun while it is near or above the horizon, else the moon; both are dim
+    // around the switch, so the shadows never jump.
+    const sunUp = sun.elev > -4;
+    const key = this.lastLight;
+    const dir = sunUp ? sun.dir : sun.moon;
+    const at = this.climber.root.position;
+    key.target.position.copy(at);
+    key.position.copy(at).addScaledVector(dir.y < 0.05 ? dir.clone().setY(0.05).normalize() : dir, 70);
+    if (sunUp) {
+      key.color.copy(look.sun);
+      key.intensity = look.sunI * 1.25;
+    } else {
+      key.color.set('#8fa4d8');
+      key.intensity = look.moonI * (1 - this.clouds.cover * 0.7);
+    }
+    // Clouds, wind and the things the wind moves.
+    const coverTarget = coverFor(this.weather);
+    this.clouds.update(dt, coverTarget, this.weatherOverride || this.hourOverride !== null ? 2.5 : 25, look, sun.dir, this.wind.dir, this.wind.strength);
+    treeWind.wind.value.set(this.wind.dir.x, this.wind.dir.y).multiplyScalar(this.wind.strength * (this.reduced ? 0.3 : 1));
+    treeWind.time.value = this.clock;
+    this.camp.fire.wind = this.wind.dir.x * this.wind.strength;
+    this.sound.setWind(this.wind.strength);
+    this.sound.setDaylight(Math.max(0, Math.min(1, (sun.elev - 2) / 10)) * (1 - this.clouds.cover * 0.6));
+  }
+
+  /**
+   * Step quality down when frames run long, and back up when there is room. Changes are rare
+   * (each costs a shader rebuild), and `?quality=` pins it for review.
+   */
+  private adaptQuality(frameMs: number): void {
+    if (this.tierLocked) return;
+    this.tierClock += frameMs / 1000;
+    if (frameMs > 26) this.tierSlow += frameMs / 1000;
+    if (frameMs < 14) this.tierFast += frameMs / 1000;
+    if (this.tierClock < 4) return;
+    const slow = this.tierSlow / this.tierClock > 0.6;
+    const fast = this.tierFast / this.tierClock > 0.9;
+    this.tierClock = this.tierSlow = this.tierFast = 0;
+    if (slow && this.tier > 0) this.setTier(this.tier - 1);
+    else if (fast && this.tier < 2) this.setTier(this.tier + 1);
+  }
+
+  setTier(t: number, lock = false): void {
+    this.tier = Math.max(0, Math.min(2, t));
+    if (lock) this.tierLocked = true;
+    const key = this.lastLight;
+    const size = this.tier === 2 ? 2048 : 1024;
+    key.castShadow = this.tier > 0;
+    if (key.shadow.mapSize.x !== size) {
+      key.shadow.mapSize.set(size, size);
+      key.shadow.map?.dispose();
+      key.shadow.map = null;
+    }
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(Math.min(dpr, this.tier === 0 ? 1 : coarse ? 1.5 : 1.75));
+    this.resize();
   }
 
   private cued = new Set<string>();
@@ -1220,16 +1380,18 @@ export class Stage {
     c.setPose(pose);
     // Cold comes from the weather, never from an unchecked habit (decision A-8).
     const cold = this.weather === 'storm' ? 0.75 : this.weather === 'snow' ? 0.45 : 0.12;
-    c.overlay(this.clock, cold, !this.reduced);
-    this.kit.update(this.clock);
+    // Tiredness drifts slowly toward what the water record says; it falls faster than it rises.
+    const toward = this.fatigueTarget - this.fatigue;
+    this.fatigue += toward * (1 - Math.exp(-dt / (toward < 0 ? 4 : 40)));
+    this.breathPhase += dt * ((Math.PI * 2) / (3.8 - this.fatigue * 1.3));
+    c.overlay(this.clock, cold, !this.reduced, this.breathPhase, this.fatigue);
+    this.kit.update(this.clock, this.wind.strength);
     this.ambient();
 
-    // The sky follows your clock; checked every second.
-    this.skyTimer += dt;
-    if (this.skyTimer > 1) {
-      this.skyTimer = 0;
-      this.applySky();
-    }
+    // Light, sky, clouds and wind follow your clock, every frame (cheap: a few colours and one light).
+    this.wind.update(this.clock, dt, this.weather);
+    this.applyLight(dt);
+    this.adaptQuality(this.frameMs);
 
     // Steam from your cup once it is filled.
     if (this.steamT >= 0) {
@@ -1374,45 +1536,3 @@ function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
 
-interface SkyKey {
-  zenith: THREE.Color;
-  mid: THREE.Color;
-  horizon: THREE.Color;
-  fog: THREE.Color;
-  hemiSky: THREE.Color;
-  hemiGround: THREE.Color;
-  hemi: number;
-  sun: THREE.Color;
-  sunI: number;
-  stars: number;
-}
-
-const C = (h: string): THREE.Color => new THREE.Color(h);
-const NIGHT: SkyKey = { zenith: C('#05070f'), mid: C('#0f1428'), horizon: C('#232640'), fog: C('#141726'), hemiSky: C('#2c3360'), hemiGround: C('#0e0c0a'), hemi: 0.8, sun: C('#8fa4d8'), sunI: 0.18, stars: 0.95 };
-const DAWN: SkyKey = { zenith: C('#1b2546'), mid: C('#5d4f75'), horizon: C('#e6936a'), fog: C('#6e5a6a'), hemiSky: C('#6b6f9c'), hemiGround: C('#2a2218'), hemi: 1.15, sun: C('#ffb98a'), sunI: 0.75, stars: 0.25 };
-const DAY: SkyKey = { zenith: C('#335b93'), mid: C('#7fa6cc'), horizon: C('#cfdce4'), fog: C('#8d9fb2'), hemiSky: C('#a9bbd8'), hemiGround: C('#463b2c'), hemi: 1.5, sun: C('#fff0d8'), sunI: 1.0, stars: 0 };
-const DUSK: SkyKey = { zenith: C('#141a33'), mid: C('#4a3a5c'), horizon: C('#d8875a'), fog: C('#5a4b5e'), hemiSky: C('#7a7eac'), hemiGround: C('#2e261b'), hemi: 1.35, sun: C('#ffb27a'), sunI: 0.9, stars: 0.55 };
-const SKY_KEYS: Array<[number, SkyKey]> = [[0, NIGHT], [5, NIGHT], [6.5, DAWN], [8.5, DAY], [16, DAY], [18.3, DUSK], [20.3, NIGHT], [24, NIGHT]];
-
-/** The sky at an hour of the day, blended between night, dawn, day and dusk. */
-export function skyAt(hour: number): SkyKey {
-  const h = ((hour % 24) + 24) % 24;
-  let i = 0;
-  while (i < SKY_KEYS.length - 2 && h >= SKY_KEYS[i + 1]![0]) i++;
-  const [h0, a] = SKY_KEYS[i]!;
-  const [h1, b] = SKY_KEYS[i + 1]!;
-  const u = smooth((h - h0) / Math.max(0.001, h1 - h0));
-  const mix = (x: THREE.Color, y: THREE.Color): THREE.Color => x.clone().lerp(y, u);
-  return {
-    zenith: mix(a.zenith, b.zenith),
-    mid: mix(a.mid, b.mid),
-    horizon: mix(a.horizon, b.horizon),
-    fog: mix(a.fog, b.fog),
-    hemiSky: mix(a.hemiSky, b.hemiSky),
-    hemiGround: mix(a.hemiGround, b.hemiGround),
-    hemi: a.hemi + (b.hemi - a.hemi) * u,
-    sun: mix(a.sun, b.sun),
-    sunI: a.sunI + (b.sunI - a.sunI) * u,
-    stars: a.stars + (b.stars - a.stars) * u,
-  };
-}

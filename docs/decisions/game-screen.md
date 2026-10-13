@@ -226,6 +226,36 @@ recorded from now on; phone shake opt-in and off. Device target: not chosen yet.
   presets (dawn, golden, dusk, blue, night, noon), a weather preview, the frame time, Back to
   live. Preview only: nothing is written, and the record's weather comes back on close.
 
+## Water's cause and effect; Living World Phase 3 (13 Oct)
+
+Asked for: the drink scene stays, with her relief and her fatigue easing as the whole cause and
+effect; Phase 3 for "an average middle range phone as of 2026".
+
+- **G-42 Water shows on Ari, gently.** A tiredness level (0 fresh to at most 0.75) drifts toward
+  what the water record says: how much is left to drink today, whether a glass is due, and how
+  long since the last one. Tired: shoulders down, a heavier head, quicker deeper breathing, now and
+  then a hand to the back of her neck or a glove across her brow. Every glass still plays the
+  drink scene; its sigh of relief drops her tiredness at once, and it stays lower. Reaching the
+  day's goal: one long stretch. The tin's fill line shows what is left to drink (it empties as she
+  drinks); the corner ring shows what you have had. Presentation only: no effect on the story,
+  the climb, streaks or any habit, and never distress (no shivering, no collapse; A-8 stands).
+- **G-43 One light pipeline, every frame.** Your clock → the sun's position (an art-directed
+  latitude of 28°, never your location) → the sky dome (gradient, warm glow toward the sun, halo
+  and disc, a moon at night) → one key light (sun by day, moon by night, switching while both are
+  dim) with a moving shadow over camp → ambient and fog → a cloud layer lit from the sun (golden
+  or silver edges near a low sun) → stars. Continuous in time: tested minute by minute over a day.
+- **G-44 Weather stays the weekly canon** (Xander's choice): the last ended week sets the cloud
+  cover (clear 18%, calm 42%, snow 78%, storm 95%), easing over about 25 s so weather arrives. Real
+  local weather as ambience is not wired yet: it needs a forecast source the page may not reach.
+- **G-45 One wind** (steady part from the weather, gusts that ease in and out) moves the snow,
+  the tree crowns, the flag, the flames and the wind sound. Birds now and then in fair daylight.
+- **G-46 Quality steps with the phone.** Standard (sun shadow 1024) by default; down to light (no
+  sun shadow, 1× resolution) when frames run long for a few seconds, up to high (2048) when there
+  is room. `?quality=low|high` pins it; the Lab shows the frame time, the tier and the sun's
+  elevation. Target: a mid-range 2026 phone at a steady frame rate, never blocking a tap.
+- Not yet (by the plan's own order): god rays and rare skies, a real-weather ambience source, and
+  any increase in mesh detail (Phase 4).
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).

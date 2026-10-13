@@ -32,6 +32,8 @@ export interface Fire {
   /** 0 = cold embers, 1 = full fire. Eased toward `target`. */
   level: number;
   target: number;
+  /** The shared wind, -1..1 along x: flames lean with it. */
+  wind: number;
   update(t: number, dt: number): void;
 }
 
@@ -78,6 +80,7 @@ export function buildFire(shadowSize: number): Fire {
     const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: ftex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     f.center.set(0.5, 0.2);
     f.position.set((rnd() - 0.5) * 0.18, 0.1, (rnd() - 0.5) * 0.18);
+    f.userData.x = f.position.x;
     group.add(f);
     flames.push(f);
   }
@@ -113,6 +116,7 @@ export function buildFire(shadowSize: number): Fire {
     light,
     level: 0.18,
     target: 0.18,
+    wind: 0,
     update(t: number, dt: number) {
       fire.level += (fire.target - fire.level) * Math.min(1, dt * 1.6);
       const L = fire.level;
@@ -127,7 +131,8 @@ export function buildFire(shadowSize: number): Fire {
         const h = (0.16 + L * 1.05) * (0.65 + n * 0.6) * (i === 0 ? 1.2 : 0.85);
         f.scale.set(h * 0.62, h, 1);
         f.material.opacity = Math.min(1, 0.55 + L * 0.6);
-        f.position.x += Math.sin(t * 3 + i) * 0.0008;
+        // Leaning with the wind, never drifting off.
+        f.position.x = (f.userData.x as number) + Math.sin(t * 3 + i) * 0.01 + fire.wind * h * 0.22;
       });
       // Embers: spawn rate rises with the fire.
       for (let i = 0; i < EMBERS; i++) {

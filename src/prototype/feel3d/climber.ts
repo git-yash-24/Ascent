@@ -19,7 +19,8 @@ export interface Climber {
   /** Evaluate a keyframed clip at time t. */
   sample(keys: Keyframe[], t: number): Pose;
   /** Small additive motions: breath and shiver. */
-  overlay(t: number, cold: number, motion: boolean): void;
+  /** Breathing and shivers. `breath` is the breathing phase (radians), `depth` 0 to 1 deepens it. */
+  overlay(t: number, cold: number, motion: boolean, breath?: number, depth?: number): void;
 }
 
 export function buildClimber(): Climber {
@@ -179,11 +180,14 @@ export function buildClimber(): Climber {
     sample(keys: Keyframe[], t: number): Pose {
       return samplePose(keys, t);
     },
-    overlay(t: number, cold: number, motion: boolean) {
-      // Breathing: a slow rise of the chest, deeper when cold.
-      const breath = Math.sin(t * (Math.PI * 2) / 3.8);
-      spine.rotation.x += breath * 0.012;
-      neck.rotation.x -= breath * 0.008;
+    overlay(t: number, cold: number, motion: boolean, phase?: number, depth = 0) {
+      // Breathing: a slow rise of the chest; heavier and quicker when she is tired.
+      const breath = Math.sin(phase ?? (t * (Math.PI * 2)) / 3.8);
+      const amp = 1 + depth * 1.2;
+      spine.rotation.x += breath * 0.012 * amp;
+      neck.rotation.x -= breath * 0.008 * amp;
+      L.shoulder.rotation.z += breath * 0.01 * depth;
+      R.shoulder.rotation.z -= breath * 0.01 * depth;
       if (!motion) return;
       // Shivers come in bursts when cold.
       const burst = Math.max(0, Math.sin(t * 0.9) * Math.sin(t * 0.37 + 1));

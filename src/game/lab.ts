@@ -42,7 +42,7 @@ export function labPanel(stage: Stage, onClose: () => void): HTMLElement {
     presets.append(b);
   }
   const fps = h('span', { class: 'lab-fps' });
-  const tick = window.setInterval(() => (fps.textContent = `${stage.frameMs.toFixed(1)} ms/frame · ${Math.round(1000 / Math.max(1, stage.frameMs))} fps`), 500);
+  const tick = window.setInterval(() => (fps.textContent = `${stage.frameMs.toFixed(1)} ms/frame · ${Math.round(1000 / Math.max(1, stage.frameMs))} fps · quality ${['light', 'standard', 'high'][stage.tier]} · sun ${stage.sunElev.toFixed(1)}°`), 500);
   const reset = h('button', { class: 'btn small', type: 'button' }, 'Back to live');
   reset.addEventListener('click', () => {
     stage.previewHour(null);

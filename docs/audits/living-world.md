@@ -61,3 +61,6 @@ reduced motion, keyboard, ghost click.
   recorded times, shake opt-in. Device target still open.
 - Phase 2 done (G-38 to G-41): action times recorded, the flask as a world prop with a close-up,
   Setup in parts, Environment Lab. Phase 5's timestamp prerequisite is now met going forward.
+- Water cause and effect (G-42) and Phase 3's base-camp light pipeline (G-43 to G-46). Device target
+  set by Xander: an average mid-range 2026 phone; adaptive quality tiers against measured frame time.
+  Not measurable here: real-phone frame times (headless software rendering runs at ~3 fps).

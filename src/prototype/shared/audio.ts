@@ -7,6 +7,10 @@ export interface Sound {
   start(): Promise<void>;
   setMuted(m: boolean): void;
   setFire(level: number): void;
+  /** The shared wind, 0 still to 1 storm: the wind bed follows it. */
+  setWind(level: number): void;
+  /** Daylight 0 to 1: birds now and then in fair daylight. */
+  setDaylight(level: number): void;
   setWalking(on: boolean): void;
   step(): void;
   tick(): void;
@@ -33,6 +37,10 @@ export function createSound(): Sound {
   let droneGain: GainNode | null = null;
   let noise: AudioBuffer | null = null;
   let fireLevel = 0.2;
+  let windGain: GainNode | null = null;
+  let windLevel = 0.2;
+  let daylight = 0;
+  let birdTimer = 0;
   let crackleTimer = 0;
   let muted = false;
   let started = false;
@@ -142,6 +150,28 @@ export function createSound(): Sound {
         lfo2.connect(lfo2g).connect(wf.frequency);
         lfo2.start();
         wind.connect(wf).connect(wg).connect(master);
+        windGain = wg;
+        // Birds: a short falling whistle now and then, only in fair daylight.
+        birdTimer = window.setInterval(() => {
+          if (!ctx || muted || daylight < 0.6 || windLevel > 0.5 || Math.random() > 0.18) return;
+          const t0 = now();
+          const n = 2 + Math.floor(Math.random() * 3);
+          const f0 = 2600 + Math.random() * 1400;
+          for (let i = 0; i < n; i++) {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = 'sine';
+            const t = t0 + i * (0.09 + Math.random() * 0.05);
+            o.frequency.setValueAtTime(f0, t);
+            o.frequency.exponentialRampToValueAtTime(f0 * 0.72, t + 0.08);
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.018, t + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+            o.connect(g).connect(master!);
+            o.start(t);
+            o.stop(t + 0.12);
+          }
+        }, 1500);
 
         // Fire: a low rumble plus crackle pops.
         const rumble = loopNoise(ctx, brown);
@@ -181,6 +211,13 @@ export function createSound(): Sound {
     setMuted(m: boolean) {
       muted = m;
       if (ctx && master) master.gain.setTargetAtTime(m ? 0 : 0.8, now(), 0.2);
+    },
+    setWind(level: number) {
+      windLevel = level;
+      if (ctx && windGain) windGain.gain.setTargetAtTime(0.025 + level * 0.12, now(), 0.8);
+    },
+    setDaylight(level: number) {
+      daylight = level;
     },
     setFire(level: number) {
       fireLevel = level;
@@ -265,6 +302,9 @@ export function createSound(): Sound {
       tone(scale[step % scale.length] ?? 523.3, now(), 1.2, 0.04);
     },
   };
-  window.addEventListener('pagehide', () => window.clearInterval(crackleTimer));
+  window.addEventListener('pagehide', () => {
+    window.clearInterval(crackleTimer);
+    window.clearInterval(birdTimer);
+  });
   return sound;
 }
