@@ -40,13 +40,14 @@ export interface TodayHooks {
 
 export class TodaySheet {
   readonly caption: HTMLElement;
-  readonly sheet: HTMLElement;
+  readonly compact: HTMLElement;
+  readonly detail: HTMLElement;
   private chips = new Map<string, Chip>();
   private list: HTMLUListElement;
   private head: HTMLElement;
   private alerts: HTMLElement;
   private water: HTMLElement;
-  private detail: HTMLElement;
+  private body: HTMLElement;
   private last: View | null = null;
 
   constructor(
@@ -58,19 +59,12 @@ export class TodaySheet {
     this.head = h('div', { class: 'sheet-head' });
     this.alerts = h('div', { class: 'alerts' });
     this.list = h('ul', { class: 'chips', 'aria-label': 'Habits. Tap for done, hold for attempted or rest.' });
-    this.water = h('section', { class: 'flask', 'aria-label': 'Water' });
-    this.detail = h('div', { class: 'detail' });
-    this.sheet = h(
-      'div',
-      { class: 'sheet' },
-      h('div', { class: 'grab', 'aria-hidden': 'true' }),
-      this.head,
-      this.alerts,
-      this.list,
-      this.water,
-      h('p', { class: 'more-hint', 'aria-hidden': 'true', text: 'Hold a habit for attempted or rest · scroll for detail' }),
-      this.detail,
-    );
+    this.water = h('section', { class: 'flask glass', 'aria-label': 'Water' });
+    this.body = h('div', { class: 'detail-body' });
+    // Over the world: only the checklist (and an alert when one needs you).
+    this.compact = h('div', { class: 'compact-today' }, this.alerts, this.list);
+    // Scrolling down: the day picker and week, the flask in full, habits by group.
+    this.detail = h('div', { class: 'detail' }, h('div', { class: 'glass block' }, this.head), this.water, this.body);
     setInterval(() => this.last && this.renderWater(this.last), 60_000);
   }
 
@@ -91,7 +85,7 @@ export class TodaySheet {
     const anyLogged = Object.values(day?.states ?? {}).some((s) => s !== 'open' && s !== 'unscheduled' && s !== 'missed');
     const line = outcome === 'free' ? COACH.free : anyLogged ? COACH[outcome] ?? COACH.partial : COACH.empty;
     this.caption.replaceChildren(
-      h('span', { class: 'cap-day', text: `Day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Chapter ${d.climb.chapter + 1}` }),
+      h('span', { class: 'cap-day', text: `Day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(d.climb.current?.score ?? 0)}` }),
       h('span', { class: 'cap-line coach', text: line ?? '' }),
     );
   }
@@ -358,7 +352,7 @@ export class TodaySheet {
       ], pct(score)),
       h('div', { class: 'g-legend', 'aria-hidden': 'true' }, h('span', { text: '30% hold' }), h('span', { text: `${Math.round(barAt * 100)}% climb` }), h('span', { text: '85% summit' })),
     );
-    this.detail.replaceChildren(section('By group', ...groups), week);
+    this.body.replaceChildren(h('div', { class: 'glass block' }, section('By group', ...groups)), h('div', { class: 'glass block' }, week));
   }
 }
 

@@ -253,15 +253,53 @@ async function hold(page, loc, ms) {
   await page.mouse.up();
 }
 
-await test('game: lands on Today with the world above and chips below', async (page) => {
+await test('game: lands on Today: the world fills the screen, a minimal glass checklist floats low', async (page) => {
   await startGame(page);
   assert((await page.evaluate(() => location.hash)) === '#today', 'not on #today');
   const vh = await page.evaluate(() => window.innerHeight);
   const world = await page.evaluate(() => Math.max(...[...document.querySelectorAll('canvas.world, .world-fallback')].map((e) => e.getBoundingClientRect().height)));
-  assert(world / vh > 0.6, `world takes ${world / vh}`);
-  const sheetTop = (await page.locator('#s-today .sheet').boundingBox()).y;
-  assert(sheetTop / vh > 0.55 && sheetTop / vh < 0.65, `sheet starts at ${sheetTop / vh}`);
+  assert(world / vh > 0.98, `world takes ${world / vh}`);
+  const chipTop = (await page.locator('#s-today .gchip').first().boundingBox()).y;
+  assert(chipTop / vh > 0.7, `checklist starts at ${chipTop / vh}`);
   assert((await page.locator('#s-today .gchip').count()) === 2, 'two chips expected');
+  // Nothing else over the world: the day picker and water bar live below the fold.
+  const headTop = (await page.locator('#s-today .sheet-head').boundingBox()).y;
+  assert(headTop > vh, 'the day picker should be below the fold');
+});
+
+await test('game: the flask is on every screen; a tap is a glass, a hold offers removing one', async (page) => {
+  await startGame(page);
+  for (const name of ['Week', 'Camp']) {
+    await page.getByRole('button', { name, exact: true }).click();
+    assert(await page.locator('.flask-btn').isVisible(), `no flask on ${name}`);
+  }
+  await page.locator('.flask-btn').tap();
+  await page.locator('.flask-btn').tap();
+  assert((await page.locator('.flask-btn .flask-n').textContent()) === '2/8', 'glasses not counted');
+  assert((await page.locator('.flask-btn').getAttribute('aria-label')).startsWith('Drink a glass of water. 2 of 8'), 'flask label not updated');
+  assert((await page.locator('.game > .sr-only').textContent()).includes('Ari drinks'), 'no drink announcement');
+  await hold(page, page.locator('.flask-btn'), 850);
+  await page.getByRole('button', { name: 'Remove a glass' }).click();
+  assert((await page.locator('.flask-btn .flask-n').textContent()) === '1/8', 'glass not removed');
+});
+
+await test('game: tapping a day on the week screen replays it, and it can be closed', async (page) => {
+  await startGame(page);
+  await chip(page, 'Qbank').tap();
+  await page.getByRole('button', { name: 'Week', exact: true }).click();
+  await page.waitForFunction(() => location.hash === '#week');
+  await page.locator('#s-week .wd:not([disabled])').last().click();
+  await page.locator('.reel:not([hidden])').waitFor();
+  const first = await page.locator('.reel-card').textContent();
+  assert(first.includes('Today, still being written'), `first card: ${first}`);
+  await page.waitForTimeout(1400);
+  assert((await page.locator('.reel-card').textContent()).includes('Qbank'), 'second card is not the habit');
+  await page.getByRole('button', { name: 'Close' }).click();
+  assert(await page.locator('.reel').isHidden(), 'replay did not close');
+  // Escape closes it too.
+  await page.locator('#s-week .wd:not([disabled])').last().click();
+  await page.keyboard.press('Escape');
+  assert(await page.locator('.reel').isHidden(), 'Escape did not close the replay');
 });
 
 await test('game: tap is done, tap again is empty; under 100 ms to stored', async (page) => {
@@ -331,7 +369,7 @@ await test('game: base camp journal saves and survives a reload; leagues follow 
   await startGame(page);
   await chip(page, 'Qbank').tap();
   await page.getByRole('button', { name: 'Camp', exact: true }).click();
-  await page.getByRole('tab', { name: 'Journal' }).click();
+  assert((await page.getByRole('tab', { name: 'Journal' }).getAttribute('aria-selected')) === 'true', 'base camp should open on the journal');
   await page.getByLabel('Today’s note').fill('Did the qbank before lunch.');
   await page.getByRole('button', { name: 'Save note' }).click();
   await page.waitForTimeout(150);

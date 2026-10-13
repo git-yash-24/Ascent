@@ -149,7 +149,7 @@ const PEAKS: Array<{ x: number; z: number; h: number; s: number }> = [
   { x: -260, z: -540, h: 100, s: 130 },
 ];
 
-function rangeHeight(x: number, z: number): number {
+export function rangeHeight(x: number, z: number): number {
   let h = 0;
   for (const p of PEAKS) {
     const d = Math.hypot(x - p.x, z - p.z) / p.s;
@@ -185,6 +185,59 @@ function buildMountains(): { group: THREE.Group; summit: THREE.Vector3 } {
   g.add(new THREE.Mesh(flat, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
   const summit = new THREE.Vector3(AMBAR.x, rangeHeight(AMBAR.x, AMBAR.z) - 8, AMBAR.z + 14);
   return { group: g, summit };
+}
+
+/** Height anywhere on the map: the near terrain, the far range, and the midlands between. */
+export function heightAt(x: number, z: number): number {
+  if (z > -190) return groundHeight(x, z);
+  if (z < -500) return rangeHeight(x, z);
+  return midHeight(x, z);
+}
+
+/**
+ * The midlands: the band between the near terrain and the far range, so the whole route can be
+ * seen from above without a gap. Same faceted look and palette.
+ */
+function buildMidlands(): THREE.Mesh {
+  // One wide ground from the foothills to the range: around and beyond the near terrain (which
+  // sits on top of it), so the map has no edge from above.
+  const geo = new THREE.PlaneGeometry(1560, 960, 120, 74);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(-40, 0, -30);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const inside = Math.abs(x) < 172 && z < 152 && z > -192;
+    pos.setY(i, inside ? groundHeight(x, z) - 3 : heightAt(x, z));
+  }
+  const flat = geo.toNonIndexed();
+  flat.computeVertexNormals();
+  const fp = flat.attributes.position as THREE.BufferAttribute;
+  const fn = flat.attributes.normal as THREE.BufferAttribute;
+  const colors = new Float32Array(fp.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < fp.count; i += 3) {
+    const cx = (fp.getX(i) + fp.getX(i + 1) + fp.getX(i + 2)) / 3;
+    const cz = (fp.getZ(i) + fp.getZ(i + 1) + fp.getZ(i + 2)) / 3;
+    const cy = (fp.getY(i) + fp.getY(i + 1) + fp.getY(i + 2)) / 3;
+    const ny = (fn.getY(i) + fn.getY(i + 1) + fn.getY(i + 2)) / 3;
+    c.copy(COL.grassLow).lerp(COL.grassDry, fbm(cx * 0.03, cz * 0.03, 2));
+    c.lerp(COL.rock, THREE.MathUtils.clamp((1 - ny) * 2.4 + (cy - 60) / 160, 0, 1));
+    if (cy > 150) c.lerp(COL.snow, Math.min(0.8, (cy - 150) / 50));
+    for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (i + k) * 3);
+  }
+  flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mesh = new THREE.Mesh(flat, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+  mesh.receiveShadow = false;
+  return mesh;
+}
+
+function midHeight(x: number, z: number): number {
+  // Continue the near slope's rise, then hand over to the range.
+  const t = THREE.MathUtils.smoothstep(z, -180, -500);
+  const slope = -z * 0.14 + (fbm(x * 0.012 + 3, z * 0.012, 3) - 0.5) * 40;
+  return THREE.MathUtils.lerp(slope, rangeHeight(x, z), t);
 }
 
 function radialTexture(inner: string, outer: string): THREE.CanvasTexture {
@@ -261,6 +314,7 @@ export function buildWorld(scene: THREE.Scene): World {
   group.add(buildRocks());
   const { group: mountains, summit } = buildMountains();
   group.add(mountains);
+  group.add(buildMidlands());
 
   // The Ninth Hut's light: a small lamp near the summit that signals the weather every dusk.
   const summitLight = new THREE.Sprite(

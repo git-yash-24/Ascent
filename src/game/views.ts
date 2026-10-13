@@ -11,7 +11,7 @@ import type { View } from '../ui/controller';
 import { h } from '../ui/dom';
 import { pct, VERDICT_WORDS } from '../ui/format';
 import { bar, dot, section, tiny, weekGauge } from './ui';
-import type { Outcome } from './stage';
+import { YEAR_STAGES, type TrailDay } from './trail';
 
 const WD = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const OUTCOME_WORD: Record<DayOutcome, string> = {
@@ -34,18 +34,14 @@ function dayCell(v: View, d: DateKey, label: string, cls = 'cell'): HTMLElement 
   return el;
 }
 
-/** The 3D camps for this week's ended days. */
-export function weekCamps(v: View): Array<{ label: string; outcome: Outcome }> {
+/** This week, Monday to Sunday, for the trail in the world. */
+export function weekDays(v: View): TrailDay[] {
   const mon = weekStart(v.today);
-  const out: Array<{ label: string; outcome: Outcome }> = [];
-  const fmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' });
-  for (let d = mon; compareDateKeys(d, v.today) < 0; d = addDays(d, 1)) {
-    const o = v.derived.days[d]?.outcome ?? 'free';
-    const outcome: Outcome = o === 'closed' ? 'closed' : o === 'partial' ? 'partial' : o === 'rested' || o === 'excused' ? 'rested' : 'missed';
-    if (o === 'free') continue;
-    out.push({ label: fmt.format(new Date(`${d}T12:00:00Z`)), outcome });
-  }
-  return out;
+  return [0, 1, 2, 3, 4, 5, 6].map((i) => {
+    const d = addDays(mon, i);
+    const future = compareDateKeys(d, v.today) > 0;
+    return { date: d, label: WD_LONG[i] ?? '', outcome: future ? 'future' : d === v.today ? 'inProgress' : v.derived.days[d]?.outcome ?? 'free', isToday: d === v.today };
+  });
 }
 
 function standingRows(list: Standing[], pick: (s: Standing) => number | null, note: (s: Standing) => string): HTMLElement[] {
@@ -64,7 +60,11 @@ function standingRows(list: Standing[], pick: (s: Standing) => number | null, no
 
 export class WeekSheet {
   readonly caption = h('div', { class: 'caption' });
-  readonly sheet = h('div', { class: 'sheet' });
+  readonly compact = h('div', { class: 'glass block' });
+  readonly detail = h('div', { class: 'detail' });
+
+  /** `play`: replay a day in the world. */
+  constructor(private readonly play: (d: DateKey) => void) {}
 
   render(v: View): void {
     const c = v.derived.climb;
@@ -77,17 +77,19 @@ export class WeekSheet {
       h('span', { class: 'cap-day', text: `Week of ${short(mon)} · Stage ${c.stage + 1}` }),
       h('span', { class: 'cap-line', text: cur ? verdictLine(cur.verdict, score, barAt) : 'The week is unwritten.' }),
     );
-    const days = h('div', { class: 'weekdays', role: 'list', 'aria-label': 'Days this week' });
+    const days = h('div', { class: 'weekdays', role: 'group', 'aria-label': 'Days this week. Tap one to replay it.' });
     for (let i = 0; i < 7; i++) {
       const d = addDays(mon, i);
-      const col = h('div', { class: 'wd', role: 'listitem' }, dayCell(v, d, '', 'wd-bar'), h('span', { class: 'wd-l', text: WD[i] ?? '' }));
-      col.setAttribute('aria-label', `${WD_LONG[i]}: ${compareDateKeys(d, v.today) > 0 ? 'to come' : OUTCOME_WORD[v.derived.days[d]?.outcome ?? 'free']}, ${pct(v.derived.days[d]?.progress ?? 0)}`);
+      const future = compareDateKeys(d, v.today) > 0;
+      const col = h('button', { class: 'wd', type: 'button', 'data-date': d, onclick: () => this.play(d) }, dayCell(v, d, '', 'wd-bar'), h('span', { class: 'wd-l', text: WD[i] ?? '' }));
+      col.disabled = future;
+      col.setAttribute('aria-label', `${WD_LONG[i]}: ${future ? 'to come' : d === v.today ? 'today' : OUTCOME_WORD[v.derived.days[d]?.outcome ?? 'free']}, ${pct(v.derived.days[d]?.progress ?? 0)}${future ? '' : '. Replay the day'}`);
       days.append(col);
     }
     const list = standings(v.snapshot, v.derived, v.today);
     const past = [...c.weeks].reverse().slice(0, 6);
-    this.sheet.replaceChildren(
-      h('div', { class: 'grab', 'aria-hidden': 'true' }),
+    const focused = (document.activeElement as HTMLElement | null)?.dataset.date;
+    this.compact.replaceChildren(
       h(
         'div',
         { class: 'big-head' },
@@ -100,18 +102,23 @@ export class WeekSheet {
         { at: CLIMB.summit, label: 'summit' },
       ], pct(score)),
       days,
+    );
+    if (focused) (this.compact.querySelector(`[data-date="${focused}"]`) as HTMLElement | null)?.focus();
+    this.detail.replaceChildren(
       h('div', { class: 'g-stats' }, tiny('week streak', String(c.weeklyChain)), tiny('head start', `${Math.round((cur?.headstartIn ?? 0) * 100)}%`), tiny('stage', `${c.stage + 1}`)),
-      h('div', { class: 'detail' },
-        section('Each habit this week', ...standingRows(list, (s) => s.thisWeek, (s) => `${s.group.name}${s.chain > 1 ? ` · streak ${s.chain}` : ''}`)),
-        past.length
-          ? section(
+      h('div', { class: 'glass block' }, section('Each habit this week', ...standingRows(list, (s) => s.thisWeek, (s) => `${s.group.name}${s.chain > 1 ? ` · streak ${s.chain}` : ''}`))),
+      past.length
+        ? h(
+            'div',
+            { class: 'glass block' },
+            section(
               'Weeks behind',
               ...past.map((w) =>
                 h('div', { class: `wk v-${w.verdict}` }, h('span', { class: 'wk-d', text: short(w.week) }), h('span', { class: 'wk-v', text: VERDICT_WORDS[w.verdict].done }), h('span', { class: 'wk-s', text: pct(w.score) })),
               ),
-            )
-          : null,
-      ),
+            ),
+          )
+        : '',
     );
   }
 }
@@ -120,7 +127,8 @@ const WD_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturd
 
 export class MonthSheet {
   readonly caption = h('div', { class: 'caption' });
-  readonly sheet = h('div', { class: 'sheet' });
+  readonly compact = h('div', { class: 'glass block' });
+  readonly detail = h('div', { class: 'detail' });
 
   render(v: View): void {
     const first = `${v.today.slice(0, 8)}01`;
@@ -157,14 +165,12 @@ export class MonthSheet {
       }
       return { s, share: due ? held / due : null, note: `${held} of ${due} due days · ${s.group.name}` };
     });
-    this.sheet.replaceChildren(
-      h('div', { class: 'grab', 'aria-hidden': 'true' }),
-      cal,
-      h('div', { class: 'g-legend key' }, key('o-closed', 'camp made'), key('o-partial', 'partial'), key('o-rested', 'rest'), key('o-missed', 'missed')),
+    this.compact.replaceChildren(cal, h('div', { class: 'g-legend key' }, key('o-closed', 'camp made'), key('o-partial', 'partial'), key('o-rested', 'rest'), key('o-missed', 'missed')));
+    this.detail.replaceChildren(
       h('div', { class: 'g-stats' }, tiny('made', String(counts.closed)), tiny('partial', String(counts.partial)), tiny('rest', String(counts.rested)), tiny('missed', String(counts.missed))),
       h(
         'div',
-        { class: 'detail' },
+        { class: 'glass block' },
         section(
           'Each habit this month',
           ...rows
@@ -179,15 +185,16 @@ export class MonthSheet {
               ),
             ),
         ),
-        section('Last 30 days', h('p', { class: 'g-line', text: `${pct(v.derived.rates.last30)} of due habits held · last 7 days ${pct(v.derived.rates.last7)}` })),
       ),
+      h('div', { class: 'glass block' }, section('Last 30 days', h('p', { class: 'g-line', text: `${pct(v.derived.rates.last30)} of due habits held · last 7 days ${pct(v.derived.rates.last7)}` }))),
     );
   }
 }
 
 export class YearSheet {
   readonly caption = h('div', { class: 'caption' });
-  readonly sheet = h('div', { class: 'sheet' });
+  readonly compact = h('div', { class: 'glass block' });
+  readonly detail = h('div', { class: 'detail' });
 
   render(v: View): void {
     const c = v.derived.climb;
@@ -216,17 +223,14 @@ export class YearSheet {
 
     const best = Object.values(d.chains).reduce((m, x) => Math.max(m, x.best), 0);
     const counts = countVerdicts(c.weeks.map((w) => w.verdict));
-    this.sheet.replaceChildren(
-      h('div', { class: 'grab', 'aria-hidden': 'true' }),
-      h('div', { class: 'big-head' }, h('span', { class: 'big-v', text: `Ch ${c.chapter + 1}` }), h('span', { class: 'big-l', text: `Stage ${inChapter + 1} of ${CLIMB.stagesPerChapter} · the chapter floor holds` })),
+    this.compact.replaceChildren(
+      h('div', { class: 'big-head' }, h('span', { class: 'big-v', text: `Ch ${c.chapter + 1}` }), h('span', { class: 'big-l', text: `Stage ${c.stage + 1} of ${YEAR_STAGES} on the route` })),
       stages,
-      section('Weeks', strip, h('div', { class: 'g-legend key' }, key('v-summit', 'summit'), key('v-climb', 'climb'), key('v-hold', 'hold'), key('v-slip', 'slip'), key('v-rest', 'rest'))),
-      h(
-        'div',
-        { class: 'detail' },
-        section('Six months of days', heat),
-        h('div', { class: 'g-stats' }, tiny('days shown up', String(d.lifetime.daysShownUp)), tiny('best streak', String(best)), tiny('climbs', String((counts.climb ?? 0) + (counts.summit ?? 0)))),
-      ),
+    );
+    this.detail.replaceChildren(
+      h('div', { class: 'glass block' }, section('Weeks', strip, h('div', { class: 'g-legend key' }, key('v-summit', 'summit'), key('v-climb', 'climb'), key('v-hold', 'hold'), key('v-slip', 'slip'), key('v-rest', 'rest')))),
+      h('div', { class: 'glass block' }, section('Six months of days', heat)),
+      h('div', { class: 'g-stats' }, tiny('days shown up', String(d.lifetime.daysShownUp)), tiny('best streak', String(best)), tiny('climbs', String((counts.climb ?? 0) + (counts.summit ?? 0)))),
     );
   }
 }

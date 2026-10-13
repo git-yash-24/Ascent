@@ -12,16 +12,19 @@ import { bar, dot } from './ui';
 
 type Tab = 'trophies' | 'leagues' | 'journal' | 'advice';
 const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'journal', label: 'Journal' },
   { id: 'trophies', label: 'Trophies' },
   { id: 'leagues', label: 'Leagues' },
-  { id: 'journal', label: 'Journal' },
   { id: 'advice', label: 'Advice' },
 ];
 
 export class BaseCampSheet {
   readonly caption = h('div', { class: 'caption' });
-  readonly sheet = h('div', { class: 'sheet' });
-  private tab: Tab = 'trophies';
+  readonly compact = h('div', { class: 'glass block camp-tabs' });
+  readonly detail = h('div', { class: 'detail' });
+  private tab: Tab = 'journal';
+  /** Over the world: one line for the tab (or today's note while Ari writes). */
+  private peek = h('div', { class: 'peek', role: 'tabpanel', id: 'camp-panel' });
   private tabs: HTMLElement;
   private body = h('div', { class: 'tab-body', role: 'tabpanel' });
   private note: HTMLTextAreaElement;
@@ -31,6 +34,8 @@ export class BaseCampSheet {
   constructor(
     private readonly app: Controller,
     private readonly say: (t: string) => void,
+    /** Ari writes when you do. */
+    private readonly onType: () => void = () => undefined,
   ) {
     this.tabs = h('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Base camp' });
     for (const t of TABS) {
@@ -50,11 +55,15 @@ export class BaseCampSheet {
       });
       this.tabs.append(b);
     }
-    this.body.id = 'camp-panel';
-    this.note = h('textarea', { class: 'note', rows: '3', maxlength: String(NOTE_MAX), 'aria-label': 'Today’s note', placeholder: 'One line about today. What helped, what got in the way.' });
-    this.note.addEventListener('input', () => (this.noteState.textContent = 'Not saved yet'));
+
+    this.note = h('textarea', { class: 'note', rows: '2', maxlength: String(NOTE_MAX), 'aria-label': 'Today’s note', placeholder: 'One line about today. What helped, what got in the way.' });
+    this.note.addEventListener('input', () => {
+      this.noteState.textContent = 'Not saved yet';
+      this.onType();
+    });
     this.note.addEventListener('blur', () => this.saveNote(false));
-    this.sheet.append(h('div', { class: 'grab', 'aria-hidden': 'true' }), this.tabs, this.body);
+    this.compact.append(this.tabs, this.peek);
+    this.detail.append(h('div', { class: 'glass block' }, this.body));
   }
 
   private saveNote(announce: boolean): void {
@@ -78,21 +87,35 @@ export class BaseCampSheet {
       b.setAttribute('aria-selected', String(on));
       b.setAttribute('tabindex', on ? '0' : '-1');
     });
+    this.peek.setAttribute('aria-labelledby', `tab-${this.tab}`);
     this.body.setAttribute('aria-labelledby', `tab-${this.tab}`);
     if (this.tab === 'journal') {
       this.renderJournal(v);
       return;
     }
-    if (this.tab === 'trophies') this.body.replaceChildren(...this.trophyGrid(trophies(v.derived)));
-    else if (this.tab === 'leagues') this.body.replaceChildren(...this.leagueCards(leagues(list)));
-    else
-      this.body.replaceChildren(
-        ...advice(v.derived, list, v.today, v.steepAvailable).map((a) => {
-          const card = h('p', { class: 'advice', text: a.text });
-          if (a.family) card.style.setProperty('--fam', a.family.color);
-          return card;
-        }),
+    const more = h('p', { class: 'peek-more', 'aria-hidden': 'true', text: 'Scroll for more' });
+    if (this.tab === 'trophies') {
+      const all = trophies(v.derived);
+      const next = all.filter((t) => !t.earned).sort((a, b) => b.progress - a.progress)[0];
+      this.peek.replaceChildren(h('p', { class: 'peek-line', text: `${earned} of ${all.length} earned${next ? ` · next: ${next.name}, ${Math.round(next.progress * 100)}%` : ''}` }), more);
+      this.body.replaceChildren(...this.trophyGrid(all));
+    } else if (this.tab === 'leagues') {
+      const ls = leagues(list);
+      const top = ls[0];
+      this.peek.replaceChildren(
+        h('p', { class: 'peek-line', text: top ? `${ls.length} ${ls.length === 1 ? 'league' : 'leagues'} · best: ${top.group.name}, ${TIERS.find((t) => t.id === top.tier)?.name ?? ''}` : 'Add a habit to join its league.' }),
+        more,
       );
+      this.body.replaceChildren(...this.leagueCards(ls));
+    } else {
+      const tips = advice(v.derived, list, v.today, v.steepAvailable).map((a) => {
+        const card = h('p', { class: 'advice', text: a.text });
+        if (a.family) card.style.setProperty('--fam', a.family.color);
+        return card;
+      });
+      this.peek.replaceChildren(...tips.slice(0, 1), tips.length > 1 ? more : '');
+      this.body.replaceChildren(...tips.slice(1));
+    }
   }
 
   private trophyGrid(all: Trophy[]): HTMLElement[] {
@@ -156,15 +179,16 @@ export class BaseCampSheet {
       .sort((a, b) => b[0].localeCompare(a[0]))
       .slice(0, 14);
     const save = h('button', { class: 'btn small', type: 'button', onclick: () => this.saveNote(true) }, 'Save note');
-    if (!this.body.contains(this.note)) {
-      this.body.replaceChildren(
-        h('label', { class: 'g-sec-h', for: 'note-today', text: longDate(date) }),
-        this.note,
-        h('div', { class: 'note-row' }, this.noteState, save),
-        h('ol', { class: 'notes' }),
-      );
+    // Today's note sits over the world, so you write while Ari does.
+    if (!this.peek.contains(this.note)) {
+      this.peek.replaceChildren(h('label', { class: 'g-sec-h', for: 'note-today', text: longDate(date) }), this.note, h('div', { class: 'note-row' }, this.noteState, save));
       this.note.id = 'note-today';
     }
-    this.body.querySelector('.notes')?.replaceChildren(...past.map(([d, t]) => h('li', {}, h('span', { class: 'n-d', text: longDate(d) }), h('span', { class: 'n-t', text: t }))));
+    this.body.replaceChildren(
+      h('h3', { class: 'g-sec-h', text: 'Earlier pages' }),
+      past.length
+        ? h('ol', { class: 'notes' }, ...past.map(([d, t]) => h('li', {}, h('span', { class: 'n-d', text: longDate(d) }), h('span', { class: 'n-t', text: t }))))
+        : h('p', { class: 'hint', text: 'Notes from earlier days collect here.' }),
+    );
   }
 }

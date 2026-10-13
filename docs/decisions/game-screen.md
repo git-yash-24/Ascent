@@ -56,6 +56,36 @@ Date: 2026-10-13. Decided with Xander.
 - **G-9** `?world=off` runs the screens on a painted sky. Used by the end-to-end tests (software
   WebGL is too slow to share the main thread) and available for very slow phones.
 
+## Round 2 (2026-10-13): alive, glass, scenes
+
+Xander: water gets its own scene "no matter the stage we are at or what we are doing"; the main
+screen's UI still took too much space, so lose the background and keep a minimal checklist "like
+liquid glass"; base camp shows Ari opening his journal "in real time", same imagery as Today; the
+week was too far out: show Ari and the obstacles he crossed, and a tap on a day plays "a quick
+montage of all the activities we did and all the story beats"; month stays milestones; the year
+shows the whole terrain and trail with only an indicator of where you are. "More lively, reactive,
+interactive and alive."
+
+| Piece | Where |
+|---|---|
+| Full-screen world, glass panels, captions under the tabs | `index.html` (.glass), `src/game/game.ts` |
+| Drink scene (any screen, any new glass: flask, Today's bar, another device) | `Stage.drink`, `props.buildFlask` |
+| Journal scene at base camp; his pencil keeps pace with your typing | `Stage.compose`, `props.buildJournal` |
+| Week: camps, obstacles, posts ahead; pins on the world | `src/game/trail.ts` (`WeekTrail`) |
+| Day replay: captions plus hard cuts around his ghost double | `src/game/montage.ts`, `Stage.playMontage` |
+| Year: the whole route, the walked part lit, one beacon | `trail.ts` (`YearRoute`), `world.ts` (one ground under everything) |
+| Life: snow, idle glances at the summit light, a nod per habit done, touch Ari and he looks at you, touch the fire and it throws sparks | `Stage` |
+
+Calls made this round:
+
+- **G-10 Every new glass plays the drink**, whatever raised it (flask, Today's water bar, a sync from another device). Removing one does not.
+- **G-11 Flask**: tap for a glass, hold for "Remove a glass". The full bar with − stays in Today's detail.
+- **G-12 A closed day's reward walk now ends at tomorrow's camp** (about 6 m up the trail), so the week's trail and Ari agree. Tomorrow he is back at a fire.
+- **G-13 Trail beats** (`src/game/beats.ts`): each walked day crosses one of five obstacles (stream, boulders, fallen pine, ice, scree), chosen from the date so every device tells the same story. Partial days get halfway. Rest days leave a tent, sick days a storm tent, missed days a snowdrift. Placeholders until the authored story (M11 onward).
+- **G-14 The year route has 52 stages**: a full year of weekly climbs reaches the summit. The beacon sits at stage ÷ 52 of the route; chapter marks every 4 stages.
+- **G-15 Replay**: the day's beat, each habit (done first, then not), the flask, the journal line, how it ended; at most 9 captions, 1.25 s each; tap or Close to stop.
+- **G-16 Base camp opens on the Journal tab.** Today's note box floats over the world so you write while he does; earlier pages, trophies, leagues and advice are below.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).
