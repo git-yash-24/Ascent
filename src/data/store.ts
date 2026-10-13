@@ -323,8 +323,10 @@ export class SyncedStore {
     try {
       const raw = this.kv.get(CACHE_KEY);
       if (!raw) return null;
-      const docs = JSON.parse(raw) as { snapshot?: Snapshot };
-      return docs.snapshot ?? null;
+      const docs = JSON.parse(raw) as { snapshot?: Partial<Snapshot> };
+      if (!docs.snapshot) return null;
+      // A copy cached by an older version lacks the documents added since; they start empty.
+      return { ...emptySnapshot(), ...docs.snapshot };
     } catch {
       return null;
     }
