@@ -168,8 +168,7 @@
       .check input { width: 22px; height: 22px; accent-color: var(--ember); }
       .habit-form { border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; margin: 0; min-width: 0; }
       .habit-form legend { font-weight: 600; padding: 0 6px; }
-      .layout-pick { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
-      .layout-pick legend { padding: 0; margin-bottom: 4px; }
+
       .daybox { display: flex; flex-wrap: wrap; gap: 6px; }
       .day { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 22px; }
       .day input { accent-color: var(--ember); width: 18px; height: 18px; }
@@ -216,11 +215,13 @@
       body[data-mode='game'] .top .status[data-say='true'] .status-text { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
       body[data-mode='game']:has(.top .status[data-say='true']:not([hidden])) .gap { padding-top: calc(92px + env(safe-area-inset-top, 0px)); }
       body:has(.game[data-lifted='true']) .top .status[data-say='true'] { opacity: 1 !important; top: auto; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
-      /* The HUD rests: after a few seconds without input the tabs and the gear recede to a low
-         contrast, never out of sight, and never while one of them has focus. */
-      body[data-mode='game'] .top .nav, .screens, .flask-btn { transition: opacity .6s ease; }
-      body.hud-idle[data-mode='game'] .top .nav:not(:focus-within), body.hud-idle .screens:not(:focus-within) { opacity: .55; }
-      body.hud-idle .flask-btn:not([data-due='true']):not(:focus-visible) { opacity: .6; }
+      /* The HUD rests: after 4.5 s without input the tabs, gear, save dot, water counter, the
+         numbers line and the trail pins leave the picture. Hidden means untouchable too, so the
+         touch that wakes them lands on the world. A due flask keeps its ring; problems with
+         saving keep their words; the habits and the story line stay. */
+      body[data-mode='game'] .top .nav, body[data-mode='game'] .top .status, .screens, .flask-btn, .flask-n, .cap-day, .labels { transition: opacity .45s ease; }
+      body.hud-idle[data-mode='game'] .top .nav, body.hud-idle[data-mode='game'] .top .status:not([data-say='true']), body.hud-idle .screens, body.hud-idle .flask-btn:not([data-due='true']), body.hud-idle .flask-n, body.hud-idle .cap-day, body.hud-idle .labels { opacity: 0; pointer-events: none; }
+      body.hud-idle .labels * { pointer-events: none !important; }
       .game[data-lifted='true'] .screens, .game[data-lifted='true'] .flask-btn, body:has(.game[data-lifted='true']) .top .nav, body:has(.game[data-lifted='true']) .top .status { opacity: 0 !important; pointer-events: none; }
 
       /* Liquid glass: a clear pane that blurs and brightens what is behind it, with a bright rim
@@ -281,7 +282,9 @@
       .btn.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
 
       /* The checklist: glass pills, tinted with the habit's colour once done. */
-      .chips { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      /* One full-width row per habit: what still needs you on top, settled ones below. */
+      .chips { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+      .chips > li { will-change: transform; }
       .chips .empty { grid-column: 1 / -1; padding: 12px; border-radius: 16px; background: rgba(12, 16, 24, .45); }
       .gchip { --fam: var(--ember); --tint: var(--raise); position: relative; overflow: hidden; isolation: isolate; width: 100%; min-height: 56px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 20px; color: var(--ink); text-align: left; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: pan-x pan-y;
         background: linear-gradient(165deg, rgba(255, 255, 255, .15), rgba(255, 255, 255, .03) 55%), rgba(12, 16, 24, .3); -webkit-backdrop-filter: blur(16px) saturate(170%); backdrop-filter: blur(16px) saturate(170%); border: 1px solid rgba(255, 255, 255, .2); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .42), 0 8px 22px rgba(0, 0, 0, .25); transition: background .3s, border-color .3s, box-shadow .3s, transform .12s; }
@@ -300,8 +303,8 @@
       .gchip .glyph .fill { fill: var(--fam); }
       .gchip .glyph .mark { stroke: #10131a; }
       .gchip .g-skipped .ring { stroke: var(--frost); }
-      .gchip-text { display: grid; min-width: 0; }
-      .gchip-name { font-weight: 600; font-size: 15px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-shadow: 0 1px 6px rgba(0, 0, 0, .35); }
+      .gchip-text { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; column-gap: 12px; }
+      .gchip-name { font-weight: 600; font-size: 15px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-shadow: 0 1px 6px rgba(0, 0, 0, .35); font-size: 16px; }
       .gchip-val { font: 400 12px var(--f-mono); color: rgba(237, 231, 220, .72); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .gchip-val:empty { display: none; }
 
@@ -378,50 +381,6 @@
       .game.onboarding .screens, .game.onboarding .pager, .game.onboarding .flask-btn, .game.onboarding .labels { opacity: 0; pointer-events: none; }
       body:has(.game.onboarding) .top { display: none; }
 
-      /* ---------- The dock preview: Camp, Today, Journey ----------
-         No tabs. Home is the camp with one dock at the bottom: a header (Today, the count,
-         Journey, open the list) and the habits stacked as rows on one charcoal surface. The top
-         bar holds the way back and the place you are in. Swiping between places is off: every
-         move is a labelled button. */
-      .dock-top, .dock-head { display: none; }
-      .game.dock .dock-top { position: fixed; z-index: 7; top: calc(10px + env(safe-area-inset-top, 0px)); left: 12px; right: 62px; display: flex; align-items: center; gap: 8px; min-height: 42px; }
-      .game.dock .dock-top[hidden] { display: none; }
-      .dock-spacer { flex: 1; }
-      .dock-back, .dock-journal { display: inline-flex; align-items: center; gap: 4px; min-height: 42px; padding: 0 14px 0 10px; border-radius: 21px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(16, 20, 24, .62); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); color: var(--ink); font-size: 14px; font-weight: 600; }
-      .dock-journal { padding: 0 14px 0 12px; }
-      .ico { width: 20px; height: 20px; flex: none; }
-      .dock-place { font: 600 17px var(--f-body); text-shadow: 0 1px 8px rgba(0, 0, 0, .6); }
-      .dock-seg { display: flex; gap: 2px; padding: 3px; border-radius: 22px; background: rgba(16, 20, 24, .62); border: 1px solid rgba(255, 255, 255, .16); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
-      .dock-seg-b { min-height: 36px; padding: 0 12px; border: 0; border-radius: 18px; background: transparent; color: rgba(237, 231, 220, .8); font-size: 13px; font-weight: 600; }
-      .dock-seg-b[aria-pressed='true'] { background: #f0eee7; color: #10131a; }
-      /* The gear moves to the right; the flask sits under it. */
-      body.layout-dock[data-mode='game'] .top .nav { left: auto; right: 12px; }
-      body.layout-dock[data-mode='game'] .top .status:not([data-say='true']) { right: 12px; left: auto; }
-      .game.dock .flask-btn { top: calc(62px + env(safe-area-inset-top, 0px)); }
-      .game.dock .pager { overflow-x: hidden; }
-      /* The dock: one surface, a stable header, rows rather than floating pills. */
-      .game.dock .p-today .compact { width: min(640px, 100%); background: rgba(18, 22, 26, .9); border: 1px solid rgba(255, 255, 255, .1); border-bottom: 0; border-radius: 24px 24px 0 0; padding: 4px 12px calc(12px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -12px 30px rgba(0, 0, 0, .3); }
-      .game.dock .p-today .compact-today { gap: 4px; }
-      .game[data-lifted='true'] .dock-top { opacity: 0; pointer-events: none; }
-      .game.dock .dock-top { transition: opacity .3s; }
-      .game.dock .dock-head { display: flex; align-items: center; gap: 8px; min-height: 48px; }
-      .dock-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
-      .dock-t { font: 600 17px var(--f-body); }
-      .dock-sum { font-size: 14px; color: #adb6b8; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .dock-journey { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .05); color: var(--ink); font-size: 14px; font-weight: 600; }
-      .dock-open { width: 44px; height: 40px; border-radius: 20px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .05); color: var(--ink); }
-      .dock-open svg { width: 20px; height: 20px; }
-      .game.dock .chips { grid-template-columns: 1fr; gap: 2px; }
-      .game.dock .gchip { min-height: 54px; border-radius: 14px; background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 6px 10px 6px 12px; }
-      .game.dock .chips li + li { border-top: 1px solid rgba(255, 255, 255, .07); padding-top: 2px; }
-      .game.dock .gchip-text { flex: 1; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-      .game.dock .gchip-name { font-size: 16px; -webkit-line-clamp: 1; }
-      .game.dock .gchip-val { font-size: 13px; color: #adb6b8; font-variant-numeric: tabular-nums; }
-      .game.dock .gchip[data-state='fulfilled'] { background: color-mix(in srgb, var(--fam) 22%, transparent); border-color: transparent; box-shadow: none; }
-      .game.dock .gchip[data-state='fulfilled'] .gchip-name { text-decoration: none; }
-      .game.dock .undo { background: rgba(255, 255, 255, .06); }
-      .game.dock .alerts .alert { background: rgba(255, 255, 255, .05); backdrop-filter: none; -webkit-backdrop-filter: none; }
-
       /* Your mark: symbols and colours as round radio tiles. */
       .mark-pick { display: grid; gap: 10px; }
       .mark-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -439,10 +398,7 @@
       .screens { overflow-x: auto; scrollbar-width: none; }
       .screens::-webkit-scrollbar { display: none; }
       .screen-btn { flex: none; }
-      @media (max-width: 300px) { .chips { grid-template-columns: 1fr; } }
-      .dock-head { flex-wrap: wrap; }
-      .dock-title { flex: 1 1 140px; }
-      .game.dock .gchip-text { flex-wrap: wrap; row-gap: 0; }
+
 
       .flask { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-radius: 22px; }
       .flask[data-due='true'] { border-color: rgba(168, 236, 255, .8); }
@@ -580,7 +536,7 @@
       .undo { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 6px 6px 6px 14px; border-radius: 16px; background: rgba(14, 18, 24, .78); border: 1px solid rgba(255, 255, 255, .16); font-size: 14px; animation: undoIn .18s ease-out; }
       .undo[hidden] { display: none; }
       @keyframes undoIn { from { opacity: 0; transform: translateY(6px); } }
-      @media (min-width: 900px) { .cap-line { font-size: 26px; } .chips { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+      @media (min-width: 900px) { .cap-line { font-size: 26px; } }
     </style>
   </head>
   <body>

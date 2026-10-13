@@ -21,8 +21,11 @@ const url = `${base}?world=off`;
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium' });
 let failures = 0;
 const results = [];
-async function test(name, fn) {
+async function test(name, fn, opts = {}) {
   const ctx = await browser.newContext({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  // The HUD hides after 4.5 s idle; most tests act slower than a person would, so a quiet key
+  // keeps it awake unless the test is about the hiding itself.
+  if (opts.idle !== true) await ctx.addInitScript(() => setInterval(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' })), 1500));
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
@@ -464,31 +467,43 @@ await test('Setup: change the mark and name; watch the opening again', async (pa
   assert((await page.evaluate(() => window.__ascent.app.view().snapshot.expedition.symbol)) === 'star', 'mark lost after the opening');
 });
 
-await test('dock preview: Camp, Today and Journey by buttons; hold still marks done; Setup switches it', async (page) => {
+await test('game: the HUD leaves the picture when idle; the waking touch presses nothing', async (page) => {
   await startGame(page);
-  await page.getByRole('link', { name: 'Setup' }).click();
-  await page.getByLabel(/Dock \(preview\)/).check();
-  await page.getByRole('link', { name: 'Back', exact: true }).click();
-  await page.locator('.game.dock').waitFor();
-  assert(await page.locator('.screens').isHidden(), 'tabs still shown in the dock layout');
-  assert((await page.locator('.dock-sum').textContent()) === '0 of 2 done', 'dock header count');
-  await hold(page, chip(page, 'Review mistakes'), 850);
-  assert((await page.locator('.dock-sum').textContent()) === '1 of 2 done', 'dock header did not update');
-  await page.getByRole('button', { name: 'Journey' }).click();
+  await page.waitForFunction(() => document.body.classList.contains('hud-idle'), null, { timeout: 8000 });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.screens')).opacity === '0', null, { timeout: 2000 });
+  assert((await page.locator('.screens').evaluate((e) => getComputedStyle(e).pointerEvents)) === 'none', 'hidden tabs still take touches');
+  assert(await page.locator('#s-today .gchip').first().isVisible(), 'habits hid with the HUD');
+  // Touch exactly where the Week tab is: it wakes the HUD and changes nothing.
+  const b = await page.getByRole('button', { name: 'Week', exact: true }).boundingBox();
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  assert(!(await page.evaluate(() => document.body.classList.contains('hud-idle'))), 'touch did not wake the HUD');
+  assert((await page.evaluate(() => location.hash)) === '#today', 'the waking touch pressed a hidden tab');
+  await page.getByRole('button', { name: 'Week', exact: true }).click();
   await page.waitForFunction(() => location.hash === '#week');
-  await page.getByRole('button', { name: 'Year', exact: true }).click();
-  await page.waitForFunction(() => location.hash === '#year');
-  await page.locator('.dock-top').getByRole('button', { name: 'Back to camp' }).click();
-  await page.waitForFunction(() => location.hash === '#today');
-  await page.getByRole('button', { name: 'Journal' }).click();
-  await page.waitForFunction(() => location.hash === '#camp');
-  await page.locator('.dock-top').getByRole('button', { name: 'Back to camp' }).click();
-  await page.getByRole('button', { name: 'Open today’s list' }).click();
-  await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'true');
-  await page.locator('#s-today').getByRole('button', { name: 'Back to camp' }).click();
-  await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'false');
-  // Swiping is off: the pager does not scroll by touch.
-  assert((await page.locator('.pager').evaluate((e) => getComputedStyle(e).overflowX)) === 'hidden', 'pager still swipes');
+  // Keyboard focus in the controls keeps them up.
+  await page.getByRole('button', { name: 'Today', exact: true }).focus();
+  await page.keyboard.press('Shift');
+  await page.waitForTimeout(5200);
+  assert(!(await page.evaluate(() => document.body.classList.contains('hud-idle'))), 'HUD hid while a tab had keyboard focus');
+}, { idle: true });
+
+await test('game: habits are full-width rows, open first and done below, never moving under a finger', async (page) => {
+  await startGame(page);
+  const names = () => page.locator('#s-today .gchip .gchip-name').allTextContents();
+  assert((await names()).join(',') === 'Qbank,Review mistakes', `start order ${await names()}`);
+  const [a, b] = await Promise.all([chip(page, 'Qbank').boundingBox(), chip(page, 'Review mistakes').boundingBox()]);
+  assert(Math.abs(a.width - b.width) < 1 && a.width > 300 && b.y > a.y + a.height - 1, 'rows are not full-width and stacked');
+  // Hold Qbank to done: while the finger is still down, nothing moves.
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(850);
+  assert((await chip(page, 'Qbank').getAttribute('data-state')) === 'fulfilled', 'hold did not complete');
+  assert((await names()).join(',') === 'Qbank,Review mistakes', 'rows moved under the finger');
+  await page.mouse.up();
+  // Once released and settled, done goes below.
+  await page.waitForFunction(() => [...document.querySelectorAll('#s-today .gchip-name')].map((e) => e.textContent).join(',') === 'Review mistakes,Qbank', null, { timeout: 3000 });
+  await page.locator('.undo').getByRole('button', { name: 'Undo' }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('#s-today .gchip-name')].map((e) => e.textContent).join(',') === 'Qbank,Review mistakes', null, { timeout: 3000 });
 });
 
 await test('game: closing the day plays the reward and says so (with the world)', async (page) => {

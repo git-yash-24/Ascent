@@ -15,7 +15,6 @@ import { campState, momentumStep, waterDue, weatherOf } from '../core/world';
 import { ACCENTS } from './kit';
 import { markPicker } from './onboard';
 import { onMotionChange, reducedMotion, scrollBehavior, setMotionSetting } from '../ui/motion';
-import { layout, onLayoutChange, type Layout } from '../ui/layout';
 import type { Controller, View } from '../ui/controller';
 import { h } from '../ui/dom';
 import { BaseCampSheet } from './basecamp';
@@ -67,12 +66,6 @@ export class GameView {
   private readonly nav: HTMLElement;
   private modalOpener: HTMLElement | null = null;
   private campReady = false;
-  /** The dock preview (Camp, Today, Journey): its own top bar and the dock's header. */
-  private mode: Layout = 'tabs';
-  private readonly dockTop: HTMLElement;
-  private readonly dockHead: HTMLElement;
-  private readonly dockSum: HTMLElement;
-  private readonly backLabels: HTMLElement[] = [];
 
   constructor(private readonly app: Controller) {
     this.canvas = h('canvas', { class: 'world', 'aria-hidden': 'true' });
@@ -90,18 +83,6 @@ export class GameView {
     };
     const nav = h('nav', { class: 'screens glass', 'aria-label': 'Screens' });
     this.nav = nav;
-    // The dock preview's header (over the checklist) and top bar; hidden in the tabs layout.
-    this.dockSum = h('span', { class: 'dock-sum' });
-    const openToday = h('button', { class: 'dock-open', type: 'button', 'aria-label': 'Open today’s list' }, chevron());
-    openToday.addEventListener('click', () => {
-      const p = this.panels[1];
-      const fold = p?.firstElementChild as HTMLElement | null;
-      p?.scrollTo({ top: fold?.offsetHeight ?? 0, behavior: scrollBehavior() });
-    });
-    const journey = h('button', { class: 'dock-journey', type: 'button' }, routeIcon(), h('span', { text: 'Journey' }));
-    journey.addEventListener('click', () => this.go(2, true));
-    this.dockHead = h('div', { class: 'dock-head' }, h('div', { class: 'dock-title' }, h('span', { class: 'dock-t', text: 'Today' }), this.dockSum), journey, openToday);
-    this.dockTop = h('div', { class: 'dock-top', role: 'navigation', 'aria-label': 'Places' });
     this.pager = h('div', { class: 'pager' });
     SCREENS.forEach((s, i) => {
       const b = h('button', { class: 'screen-btn', type: 'button', 'aria-controls': `s-${s}` }, LABEL[s]);
@@ -111,12 +92,11 @@ export class GameView {
       const sheet = this.sheets[s];
       const gap = h('div', { class: 'gap' }, sheet.caption);
       const back = h('span', { text: 'Back to scene' });
-      this.backLabels.push(back);
       this.pokeable(gap);
       const panel = h(
         'section',
         { class: `panel p-${s}`, id: `s-${s}`, 'aria-label': NAME[s], tabindex: '-1' },
-        h('div', { class: 'fold' }, gap, h('div', { class: 'compact' }, s === 'today' ? this.dockHead : null, sheet.compact)),
+        h('div', { class: 'fold' }, gap, h('div', { class: 'compact' }, sheet.compact)),
         h(
           'div',
           { class: 'below' },
@@ -164,18 +144,16 @@ export class GameView {
     });
 
     const shade = h('div', { class: 'shade', 'aria-hidden': 'true' });
-    this.root = h('div', { class: 'game' }, this.canvas, this.fallback, shade, this.labels, nav, this.dockTop, this.pager, this.flask, this.reel, this.announce, opts.el, this.flaskMenu);
-    this.applyLayout(layout());
-    onLayoutChange((l) => this.applyLayout(l));
-    // The HUD fades when you are not touching anything, and returns on any touch or key.
+    this.root = h('div', { class: 'game' }, this.canvas, this.fallback, shade, this.labels, nav, this.pager, this.flask, this.reel, this.announce, opts.el, this.flaskMenu);
+    // The HUD steps out of the picture after a few seconds without input, like a game's HUD
+    // between actions. The first touch only brings it back: hidden controls take no touches,
+    // so that touch lands on the world and can never press a button it could not see.
     const wake = (): void => {
       document.body.classList.remove('hud-idle');
       window.clearTimeout(this.idleTimer);
-      this.idleTimer = window.setTimeout(() => {
-        if (this.root.isConnected && !this.onboarding && !document.querySelector('dialog[open]')) document.body.classList.add('hud-idle');
-      }, 4500);
+      this.idleTimer = window.setTimeout(() => this.rest(), 4500);
     };
-    for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(ev, wake, { passive: true });
+    for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focusin']) window.addEventListener(ev, wake, { passive: true, capture: true });
     wake();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
@@ -234,7 +212,8 @@ export class GameView {
     const now = Date.now();
     if (last && last.day === v.today && now - last.at < 4 * 3600_000) return;
     // A real absence (most of a day, or missed days): the cup comes back to your place.
-    const away = !last || now - last.at > 18 * 3600_000 || momentumStep(v.derived, v.today) > 0;
+    // (A first visit on this device has nothing to come back from.)
+    const away = last !== null && (now - last.at > 18 * 3600_000 || momentumStep(v.derived, v.today) > 0);
     try {
       localStorage.setItem(KEY, JSON.stringify({ day: v.today, at: now }));
     } catch {
@@ -303,7 +282,7 @@ export class GameView {
    * so focus and touches cannot reach it; focus goes back where it was when it ends.
    */
   private setModal(on: boolean): void {
-    const behind: Array<Element | null> = [this.pager, this.nav, this.dockTop, this.flask, this.labels, document.querySelector('header.top')];
+    const behind: Array<Element | null> = [this.pager, this.nav, this.flask, this.labels, document.querySelector('header.top')];
     if (on && !this.modalOpener) this.modalOpener = document.activeElement as HTMLElement | null;
     for (const el of behind) if (el) (el as HTMLElement & { inert: boolean }).inert = on;
     if (!on) {
@@ -376,7 +355,6 @@ export class GameView {
   /** Draw the screen in view and its neighbours now; the rest when they come into view. */
   render(v: View): void {
     this.lastView = v;
-    this.dockSum.textContent = (this.sheets.today as TodaySheet).summary(v);
     SCREENS.forEach((s, i) => {
       if (Math.abs(i - this.index) <= 1) {
         this.sheets[s].render(v);
@@ -411,54 +389,22 @@ export class GameView {
     this.renderFlask(v);
   }
 
-  // The dock preview ---------------------------------------------------------------------------
-
-  private applyLayout(l: Layout): void {
-    this.mode = l;
-    this.root.classList.toggle('dock', l === 'dock');
-    document.body.classList.toggle('layout-dock', l === 'dock');
-    // Only Today's list sits over the camp itself; elsewhere the detail goes back to its own view.
-    this.backLabels.forEach((b, i) => (b.textContent = l === 'dock' && i === 1 ? 'Back to camp' : 'Back to scene'));
-    (this.nav as HTMLElement & { inert: boolean }).inert = l === 'dock';
-    this.nav.hidden = l === 'dock';
-    this.renderDockTop();
-    this.frameAround();
-  }
-
   /**
-   * Camp (home): Journal on the right. Journey (week, month, year): back to camp, and the three
-   * as one labelled control. Journal (base camp): back to camp.
+   * Hide the HUD, unless something needs it: a sheet or dialog, typing, keyboard focus moving
+   * through the controls, the opening, a replay, the detail being up.
    */
-  private renderDockTop(): void {
-    if (this.mode !== 'dock') {
-      this.dockTop.hidden = true;
+  private rest(): void {
+    if (!this.root.isConnected || this.onboarding || this.playing || this.root.dataset.lifted === 'true') return;
+    if (document.querySelector('dialog[open]')) return;
+    const a = document.activeElement as HTMLElement | null;
+    if (a && a !== document.body && (a.matches('input, textarea, select, [contenteditable]') || a.matches(':focus-visible'))) {
+      this.idleTimer = window.setTimeout(() => this.rest(), 4500);
       return;
     }
-    this.dockTop.hidden = false;
-    const back = (): HTMLElement => {
-      const b = h('button', { class: 'dock-back', type: 'button', 'aria-label': 'Back to camp' }, backIcon(), h('span', { text: 'Camp' }));
-      b.addEventListener('click', () => this.go(1, true));
-      return b;
-    };
-    const n = this.index;
-    if (n === 1) {
-      const j = h('button', { class: 'dock-journal', type: 'button' }, bookIcon(), h('span', { text: 'Journal' }));
-      j.addEventListener('click', () => this.go(0, true));
-      this.dockTop.replaceChildren(h('span', { class: 'dock-spacer' }), j);
-    } else if (n === 0) {
-      this.dockTop.replaceChildren(back(), h('span', { class: 'dock-place', text: 'Journal' }));
-    } else {
-      const seg = h('div', { class: 'dock-seg', role: 'group', 'aria-label': 'Journey' });
-      (['week', 'month', 'year'] as const).forEach((s, k) => {
-        const b = h('button', { class: 'dock-seg-b', type: 'button', 'aria-pressed': String(n === k + 2) }, LABEL[s]);
-        b.addEventListener('click', () => this.go(k + 2, true));
-        seg.append(b);
-      });
-      this.dockTop.replaceChildren(back(), seg);
-    }
-    const focusIn = this.dockTop.contains(document.activeElement);
-    if (focusIn) (this.dockTop.querySelector('[aria-pressed="true"], button') as HTMLElement | null)?.focus();
+    document.body.classList.add('hud-idle');
   }
+
+  // Framing ---------------------------------------------------------------------------------
 
   /** Tell the camera how much of the screen the interface covers on Camp and Today. */
   private frameAround(): void {
@@ -666,7 +612,6 @@ export class GameView {
     this.panels.forEach((p, i) => p.setAttribute('aria-hidden', i === n ? 'false' : 'true'));
     this.panels.forEach((p, i) => ((p as HTMLElement & { inert: boolean }).inert = i !== n));
     this.root.dataset.screen = SCREENS[n];
-    this.renderDockTop();
     this.frameAround();
     const hash = `#${SCREENS[n]}`;
     if (location.hash !== hash && !location.hash.startsWith('#setup') && location.hash !== '#list') history.replaceState(null, '', hash);
@@ -718,12 +663,12 @@ export class GameView {
   /** While the detail is up, the tabs, flask and gear are out of reach: hidden and inert alike. */
   private syncLifted(): void {
     const lifted = this.root.dataset.lifted === 'true';
-    const hud: Array<Element | null> = [this.nav, this.dockTop, this.flask, document.querySelector('header.top .nav')];
+    const hud: Array<Element | null> = [this.nav, this.flask, document.querySelector('header.top .nav')];
     if (lifted && hud.some((el) => el?.contains(document.activeElement))) {
       (this.panels[this.index]?.querySelector('.below-up') as HTMLElement | null)?.focus({ preventScroll: true });
     }
     if (this.onboarding || this.playing) return;
-    for (const el of hud) if (el) (el as HTMLElement & { inert: boolean }).inert = lifted || (el === this.nav && this.mode === 'dock');
+    for (const el of hud) if (el) (el as HTMLElement & { inert: boolean }).inert = lifted;
   }
 
   private pendingSay = '';
@@ -810,23 +755,3 @@ function ringSvg(n: number, of: number): SVGSVGElement {
   }
   return svg;
 }
-
-function svgIcon(d: string, cls: string): SVGSVGElement {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('class', cls);
-  const p = document.createElementNS(NS, 'path');
-  p.setAttribute('d', d);
-  p.setAttribute('fill', 'none');
-  p.setAttribute('stroke', 'currentColor');
-  p.setAttribute('stroke-width', '1.8');
-  p.setAttribute('stroke-linecap', 'round');
-  p.setAttribute('stroke-linejoin', 'round');
-  svg.append(p);
-  return svg;
-}
-const routeIcon = (): SVGSVGElement => svgIcon('M4 19c3 0 4-3 7-3s3-4 6-4M17 12l3-7M14 5h6', 'ico');
-const bookIcon = (): SVGSVGElement => svgIcon('M5 4.5h9a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h9', 'ico');
-const backIcon = (): SVGSVGElement => svgIcon('M15 6l-6 6 6 6', 'ico');

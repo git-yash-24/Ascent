@@ -184,6 +184,26 @@ Test matrix run (world off unless noted; results, not plans):
 Still untested here: a real phone's soft keyboard over the amount field, iOS Safari, and the
 night scene's darkness on an actual screen.
 
+## Living World plan, Phase 1 (13 Oct)
+
+Asked for (`ASCENT-LIVING-WORLD-INNOVATION-LAYER.md`): keep the tabs, make the HUD really
+disappear, full-width habit rows with completed ones at the bottom. Audit first:
+`docs/audits/living-world.md`.
+
+- **G-34 Tabs are the layout.** The dock preview is removed (supersedes G-30 to G-32); its one
+  useful idea, full-width rows, moved into Today.
+- **G-35 The HUD hides, it does not just dim** (supersedes the 55% rest of the UI audit round). After
+  4.5 s without input the tabs, gear, save dot, water counter, numbers line and trail pins fade out
+  and take no touches. The first touch only wakes them, so it lands on the world and cannot press a
+  hidden control. Not while a sheet or dialog is open, while typing, while keyboard focus is in the
+  controls, during the opening or a replay, or with the detail up. Kept visible: the habits, the
+  story line, a due flask's ring, and save-status words when something is not synced.
+- **G-36 Rows, open first.** One full-width row per habit: still to do (open, attempted, held) on
+  top, settled (done, rested, sick) below, not due last; the usual order inside each. Rows never
+  move while a finger is down or for 0.6 to 0.7 s after a change; then they glide (instantly with
+  reduced motion) and keyboard focus stays on its row.
+- **G-37 The return beat needs a return**: a first visit on a device does not play it.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).

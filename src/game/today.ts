@@ -12,6 +12,7 @@ import { glyph, h } from '../ui/dom';
 import { dayChip, editWindow, longDate, pct, skipLabel, STATE_WORDS, unitOf, VERDICT_WORDS } from '../ui/format';
 import { holdable } from './hold';
 import { campState, momentumStep, waterDue } from '../core/world';
+import { reducedMotion } from '../ui/motion';
 import { bar, dot, section, weekGauge, type OptionsSheet } from './ui';
 
 const COACH: Record<string, string> = {
@@ -55,6 +56,10 @@ export class TodaySheet {
   private last: View | null = null;
   private undoBar: HTMLElement;
   private undoTimer = 0;
+  /** A finger is on the list, or a change was just made: rows keep their places until it settles. */
+  private pressing = false;
+  private settleAt = 0;
+  private resortTimer = 0;
 
   constructor(
     private readonly app: Controller,
@@ -66,6 +71,14 @@ export class TodaySheet {
     this.alerts = h('div', { class: 'alerts' });
     this.list = h('ul', { class: 'chips', 'aria-label': 'Habits. Hold to mark done; tap for the amount, attempted or rest.' });
     this.undoBar = h('div', { class: 'undo', hidden: true, role: 'status' });
+    this.list.addEventListener('pointerdown', () => (this.pressing = true));
+    const release = (): void => {
+      if (!this.pressing) return;
+      this.pressing = false;
+      this.settleAt = performance.now() + 700;
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
     this.water = h('section', { class: 'flask glass', 'aria-label': 'Water today' });
     this.body = h('div', { class: 'detail-body' });
     this.weekEl = h('div', { class: 'detail-body' });
@@ -75,11 +88,6 @@ export class TodaySheet {
     // then the week and what comes next at camp.
     this.detail = h('div', { class: 'detail' }, h('div', { class: 'glass block' }, this.head, this.body), this.water, this.weekEl);
     setInterval(() => this.last && this.renderWater(this.last), 60_000);
-  }
-
-  /** "1 of 2 done", for the dock's header. */
-  summary(v: View): string {
-    return daySummary(v, this.visible(v));
   }
 
   render(v: View): void {
@@ -175,7 +183,11 @@ export class TodaySheet {
   }
 
   private renderChips(v: View): void {
-    const items = this.visible(v);
+    // Open first, settled (done or rested) below, not due last; the usual order inside each.
+    const items = this.visible(v)
+      .map((x, i) => ({ x, i }))
+      .sort((a, b) => rank(a.x.state) - rank(b.x.state) || a.i - b.i)
+      .map(({ x }) => x);
     const keep = new Set<string>();
     const order: HTMLLIElement[] = [];
     for (const it of items) {
@@ -195,10 +207,39 @@ export class TodaySheet {
       }
     }
     for (const c of [...this.list.children]) if (!order.includes(c as HTMLLIElement)) c.remove();
+    const now = performance.now();
+    if (this.pressing || now < this.settleAt) {
+      // Never move a row under a finger or straight after a change: new rows join the end, the
+      // rest wait until the press is over.
+      for (const el of order) if (el.parentElement !== this.list) this.list.append(el);
+      window.clearTimeout(this.resortTimer);
+      this.resortTimer = window.setTimeout(() => this.last && this.renderChips(this.last), Math.max(80, this.settleAt - now + 20));
+    } else this.reorder(order);
+    if (items.length === 0) this.list.replaceChildren(h('li', { class: 'empty', text: 'No habits yet. Add one in Setup.' }));
+  }
+
+  /** Move rows to their new places, gliding from where they were; focus stays on its row. */
+  private reorder(order: HTMLLIElement[]): void {
+    const same = order.every((el, i) => this.list.children[i] === el);
+    if (same) return;
+    const before = new Map<HTMLLIElement, number>();
+    for (const el of order) if (el.parentElement === this.list) before.set(el, el.getBoundingClientRect().top);
+    const focused = document.activeElement as HTMLElement | null;
+    const hadFocus = focused && this.list.contains(focused) ? focused : null;
     order.forEach((el, i) => {
       if (this.list.children[i] !== el) this.list.insertBefore(el, this.list.children[i] ?? null);
     });
-    if (items.length === 0) this.list.replaceChildren(h('li', { class: 'empty', text: 'No habits yet. Add one in Setup.' }));
+    if (hadFocus && document.activeElement !== hadFocus) hadFocus.focus({ preventScroll: true });
+    if (reducedMotion()) return;
+    for (const [el, top] of before) {
+      const dy = top - el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) continue;
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${dy}px)`;
+      void el.offsetWidth;
+      el.style.transition = 'transform .32s cubic-bezier(.2, .8, .2, 1)';
+      el.style.transform = '';
+    }
   }
 
   private buildChip(hb: Habit): Chip {
@@ -244,6 +285,7 @@ export class TodaySheet {
     const date = v0.viewDate;
     const prev = this.app.entryFields(date, id);
     const t0 = performance.now();
+    this.settleAt = t0 + 700;
     const r = this.app.tapDone(id);
     (window as unknown as { __ascent?: { tapToStored: number[] } }).__ascent?.tapToStored.push(performance.now() - t0);
     this.report(id, r);
@@ -268,6 +310,7 @@ export class TodaySheet {
     const day = date === v.today ? null : longDate(date);
     const choice = await this.opts.open({ name: hb.name, family: tagOf(hb).family, ver, opener, done, day, typing, ...(from ? { from: { x: from.x, y: from.y } } : {}), ...(cur !== undefined ? { current: cur } : {}) });
     if (!choice) return;
+    this.settleAt = performance.now() + 600;
     const r =
       choice.kind === 'attempt'
         ? choice.amount !== undefined
@@ -296,6 +339,7 @@ export class TodaySheet {
     undo.addEventListener('click', () => {
       window.clearTimeout(this.undoTimer);
       this.undoBar.hidden = true;
+      this.settleAt = performance.now() + 600;
       const r = this.app.revert(date, id, prev);
       this.hooks.say(r.ok ? `${hb?.name ?? 'Habit'}: undone.` : r.message);
       (this.chips.get(id)?.btn as HTMLElement | undefined)?.focus();
@@ -444,6 +488,11 @@ function nextAtCamp(storyDay: number): HTMLElement | null {
     h('p', { text: `Next at camp: ${n.name}, after ${n.inDays} more trail ${n.inDays === 1 ? 'day' : 'days'}.` }),
     h('p', { class: 'head-def', text: 'A trail day is any day with at least one habit held or done, or a rest day.' }),
   );
+}
+
+/** Sorting: what still needs you, then what is settled, then what is not due today. */
+function rank(s: HabitDayState): number {
+  return s === 'fulfilled' || s === 'skipped' ? 1 : s === 'unscheduled' ? 2 : 0;
 }
 
 /** What the day stands at, in counts, never a percentage that hides what it is out of. */
