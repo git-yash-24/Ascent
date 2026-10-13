@@ -73,13 +73,16 @@ export async function boot(root: HTMLElement): Promise<void> {
   const statusDot = h('span', { class: 'dot', 'aria-hidden': 'true' });
   const statusText = h('span', { class: 'status-text' });
   const status = h('span', { class: 'status', role: 'status', 'aria-live': 'polite' }, statusDot, statusText);
-  const nav = h('a', { class: 'btn ghost nav', href: '#setup' }, 'Setup');
+  // In the game the link is a small gear; its name stays the visible word in plain mode.
+  const navText = h('span', { class: 'nav-t', text: 'Setup' });
+  const nav = h('a', { class: 'btn ghost nav', href: '#setup' }, gear(), navText);
   const skip = h('a', { class: 'skip-link', href: '#list' }, 'Open the plain checklist');
   const toGame = h('a', { class: 'btn ghost to-game', href: '#today' }, 'Game');
   const header = h('header', { class: 'top' }, skip, h('span', { class: 'mark', text: 'Ascent' }), status, toGame, nav);
   const outlet = h('div', { class: 'outlet' });
   root.replaceChildren(header, outlet);
 
+  let opened = false;
   const today = new TodayView(app);
   const setup = new SetupView(app, saver, __APP_VERSION__);
   const game = new GameView(app);
@@ -97,25 +100,32 @@ export async function boot(root: HTMLElement): Promise<void> {
     statusText.textContent = v.store.offline ? 'Offline' : STATUS[s];
     status.hidden = s === 'synced' && !v.store.offline;
     if (v.firstRun) {
+      // Decide only once the store has opened: a returning person's first paint must never
+      // look like a first launch.
+      if (!opened) return;
+      document.body.dataset.mode = 'game';
       if (current !== 'welcome') {
-        outlet.replaceChildren(welcome(app));
+        outlet.replaceChildren(game.root);
+        game.mount('today');
+        game.startOnboarding(welcome(app, (m) => game.preview(m)));
         current = 'welcome';
       }
       nav.hidden = true;
       toGame.hidden = true;
+      skip.hidden = true;
       return;
     }
     nav.hidden = false;
     const want = route();
     document.body.dataset.mode = want;
-    nav.textContent = want === 'setup' ? 'Back' : 'Setup';
+    navText.textContent = want === 'setup' ? 'Back' : 'Setup';
     nav.setAttribute('href', want === 'setup' ? '#home' : '#setup');
     toGame.hidden = want !== 'today';
     toGame.setAttribute('href', `#${game.screen}`);
     skip.hidden = want !== 'game';
     if (want === 'game') {
       if (current !== 'game' || navigated) {
-        if (current !== 'game') outlet.replaceChildren(game.root);
+        if (current !== 'game' && current !== 'welcome') outlet.replaceChildren(game.root);
         current = 'game';
         game.mount(screenFromHash(location.hash) ?? game.screen);
       } else game.render(v);
@@ -155,7 +165,24 @@ export async function boot(root: HTMLElement): Promise<void> {
 
   paint(app.view());
   await store.open();
+  opened = true;
   app.ensureWater();
   check();
   paint(app.view());
+}
+
+function gear(): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'nav-gear');
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', 'M4 7h10M18 7h2M4 17h2M10 17h10M16 4.5v5M8 14.5v5');
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'currentColor');
+  p.setAttribute('stroke-width', '1.8');
+  p.setAttribute('stroke-linecap', 'round');
+  svg.append(p);
+  return svg;
 }

@@ -7,7 +7,7 @@ import { startCursor, tick, type DayCursor } from '../core/model/clock';
 import { addDays, compareDateKeys, weekStart } from '../core/model/date';
 import { correctRecord, entryOn, isCleared, isEditable, logEntry } from '../core/model/entries';
 import { CURRENT_SCHEMA } from '../core/model/schemas';
-import type { DateKey, Derived, Entry, Habit, HabitId, HabitsDoc, Profile, SkipReason, Snapshot } from '../core/model/types';
+import type { DateKey, Derived, Entry, ExpeditionDoc, Habit, HabitId, HabitsDoc, Profile, SkipReason, Snapshot } from '../core/model/types';
 import { chooseSteep } from '../core/habits/weekly';
 import { archiveHabit, createHabit, deleteHabit, editDefinition, renameHabit, restoreHabit, retagHabit, sameChainRules, versionOn, type Definition } from '../core/habits/versions';
 import { suggestTag } from '../core/tags';
@@ -401,6 +401,32 @@ export class Controller {
       return { ok: false, message: e instanceof Error ? e.message : 'That change could not be saved.' };
     }
     return { ok: true };
+  }
+
+  /** Optional personal marks: symbol, accent, expedition name. `null` clears a field. */
+  saveExpedition(patch: { name?: string | null; symbol?: ExpeditionDoc['symbol'] | null; accent?: ExpeditionDoc['accent'] | null; introOn?: DateKey | null }): ActionResult {
+    const next: ExpeditionDoc = { ...this.store.current.snapshot.expedition };
+    for (const [k, v] of Object.entries(patch) as Array<[keyof ExpeditionDoc, unknown]>) {
+      if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) delete next[k];
+      else (next as unknown as Record<string, unknown>)[k] = typeof v === 'string' ? v.trim() : v;
+    }
+    try {
+      this.store.putDoc('expedition', next);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'That could not be saved.' };
+    }
+    return { ok: true };
+  }
+
+  /** Record that a moment was shown (a camp improvement revealed, the intro). Idempotent. */
+  markSeen(moment: string): void {
+    const seen = this.store.current.snapshot.seen;
+    if (seen.moments.includes(moment)) return;
+    try {
+      this.store.putDoc('seen', { ...seen, moments: [...seen.moments, moment].slice(-500) });
+    } catch {
+      // a moment not recorded only plays again; nothing is lost
+    }
   }
 
   // Backup ----------------------------------------------------------------------------------

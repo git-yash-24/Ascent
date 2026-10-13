@@ -11,10 +11,13 @@ import type { Controller, View } from '../ui/controller';
 import { glyph, h } from '../ui/dom';
 import { dayChip, editWindow, longDate, pct, skipLabel, STATE_WORDS, unitOf, VERDICT_WORDS } from '../ui/format';
 import { holdable } from './hold';
+import { campState, momentumStep } from '../core/world';
 import { bar, dot, section, weekGauge, type OptionsSheet } from './ui';
 
 const COACH: Record<string, string> = {
-  empty: 'The fire is out. One thing first.',
+  empty: 'Embers from last night. One thing first.',
+  first: 'The first morning. One thing, and she sets off.',
+  cold: 'The fire is out. One thing relights it.',
   partial: 'Moving. Keep the pace.',
   closed: 'Camp is made. Ari takes the route.',
   rested: 'Rest is part of the climb.',
@@ -83,7 +86,8 @@ export class TodaySheet {
     const day = d.days[v.today];
     const outcome = day?.outcome ?? 'free';
     const anyLogged = Object.values(day?.states ?? {}).some((s) => s !== 'open' && s !== 'unscheduled' && s !== 'missed');
-    const line = outcome === 'free' ? COACH.free : anyLogged ? COACH[outcome] ?? COACH.partial : COACH.empty;
+    const waiting = d.storyDayEarned === 0 ? COACH.first : momentumStep(d, v.today) >= 3 ? COACH.cold : COACH.empty;
+    const line = outcome === 'free' ? COACH.free : anyLogged ? COACH[outcome] ?? COACH.partial : waiting;
     this.caption.replaceChildren(
       h('span', { class: 'cap-day', text: `Day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(d.climb.current?.score ?? 0)}` }),
       h('span', { class: 'cap-line coach', text: line ?? '' }),
@@ -111,7 +115,13 @@ export class TodaySheet {
     const day = v.derived.days[v.viewDate];
     const f = day?.progress ?? 0;
     this.head.replaceChildren(
-      h('div', { class: 'head-l' }, pills, h('p', { class: 'head-sub', text: v.viewDate === v.today ? `Today ${pct(f)} · ${weekWord(score, barAt, cur?.verdict ?? 'hold')}` : `Logging for ${longDate(v.viewDate)}` })),
+      h(
+        'div',
+        { class: 'head-l' },
+        pills,
+        h('p', { class: 'head-sub', text: v.viewDate === v.today ? `Today ${pct(f)} · ${weekWord(score, barAt, cur?.verdict ?? 'hold')}` : `Logging for ${longDate(v.viewDate)}` }),
+        nextAtCamp(v.derived.storyDayEarned),
+      ),
       ring,
     );
     this.head.classList.toggle('past', v.viewDate !== v.today);
@@ -380,3 +390,10 @@ function clockText(t: string): string {
   return `${h12}:${String(mm ?? 0).padStart(2, '0')} ${(hh ?? 0) < 12 ? 'am' : 'pm'}`;
 }
 
+
+/** The next thing Ari makes at camp, and honestly how far off it is (story days, not dates). */
+function nextAtCamp(storyDay: number): HTMLElement | null {
+  const n = campState(storyDay).next;
+  if (!n) return null;
+  return h('p', { class: 'head-next', text: `Next at camp: ${n.name}, in ${n.inDays} story ${n.inDays === 1 ? 'day' : 'days'}` });
+}

@@ -199,7 +199,22 @@
       body[data-mode='game'] #app { max-width: none; padding: 0; }
       body[data-mode='game'] .top { position: fixed; inset: 0 0 auto 0; z-index: 8; background: linear-gradient(rgba(6, 8, 14, .5), rgba(6, 8, 14, 0)); border: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 18px; pointer-events: none; transition: opacity .3s; }
       body[data-mode='game'] .top > * { pointer-events: auto; }
-      body[data-mode='game'] .top .nav { min-height: 40px; padding: 0 14px; border-radius: 20px; background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .18); backdrop-filter: blur(12px) saturate(160%); -webkit-backdrop-filter: blur(12px) saturate(160%); }
+      .nav-gear { display: none; width: 20px; height: 20px; }
+      body[data-mode='game'] .top { background: none; padding: 0; height: 0; overflow: visible; }
+      body[data-mode='game'] .top .mark { display: none; }
+      body[data-mode='game'] .top .nav { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 12px; width: 42px; min-height: 42px; height: 42px; padding: 0; border-radius: 50%; display: grid; place-items: center; color: var(--ink); background: linear-gradient(165deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .04)), rgba(12, 16, 24, .3); border: 1px solid rgba(255, 255, 255, .2); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 6px 18px rgba(0, 0, 0, .3); backdrop-filter: blur(14px) saturate(170%); -webkit-backdrop-filter: blur(14px) saturate(170%); }
+      body[data-mode='game'] .top .nav-gear { display: block; }
+      body[data-mode='game'] .top .nav-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      /* Save state is a dot on the gear's shoulder; the words stay for screen readers. */
+      body[data-mode='game'] .top .status { position: fixed; z-index: 9; top: calc(9px + env(safe-area-inset-top, 0px)); left: 44px; padding: 0; background: none; pointer-events: none; }
+      body[data-mode='game'] .top .status .status-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      body[data-mode='game'] .top .status .dot { width: 9px; height: 9px; box-shadow: 0 0 0 2px rgba(12, 16, 24, .7); }
+      /* The HUD rests: after a few seconds without input the tabs and the gear fade out of the
+         picture, like a game's HUD between actions. Any touch brings them back; they still work. */
+      body[data-mode='game'] .top .nav, .screens, .flask-btn { transition: opacity .6s ease; }
+      body.hud-idle[data-mode='game'] .top .nav, body.hud-idle .screens { opacity: 0; }
+      body.hud-idle .flask-btn:not([data-due='true']) { opacity: .5; }
+      .game[data-lifted='true'] .screens, .game[data-lifted='true'] .flask-btn, body:has(.game[data-lifted='true']) .top .nav, body:has(.game[data-lifted='true']) .top .status { opacity: 0 !important; pointer-events: none; }
 
       /* Liquid glass: a clear pane that blurs and brightens what is behind it, with a bright rim
          and a soft specular sheen at the top. A faint dark base keeps text legible over fire. */
@@ -212,26 +227,35 @@
       .world-fallback { background: radial-gradient(120% 70% at 30% 75%, #d8875a 0, #4a3a5c 45%, #141a33 100%); }
       .world-fallback::after { content: ''; position: absolute; inset: 30% 0 0; background: #2a2833; clip-path: polygon(0 100%, 0 60%, 18% 30%, 30% 48%, 46% 8%, 62% 42%, 74% 28%, 100% 62%, 100% 100%); }
       .shade { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(6, 8, 12, 0) 45%, rgba(6, 8, 12, .38) 100%), rgba(6, 8, 12, calc(var(--lift, 0) * .62)); }
-      .screens { position: fixed; z-index: 7; top: calc(60px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); display: flex; gap: 2px; padding: 3px; border-radius: 24px; opacity: calc(1 - var(--lift, 0) * .5); transition: opacity .3s; }
-      .screen-btn { min-height: 36px; padding: 0 12px; border: 0; border-radius: 20px; background: transparent; color: rgba(237, 231, 220, .72); font-size: 13px; font-weight: 600; }
+      .screens { position: fixed; z-index: 7; top: calc(10px + env(safe-area-inset-top, 0px)); left: 62px; right: 62px; width: max-content; max-width: calc(100% - 124px); margin-inline: auto; display: flex; gap: 2px; padding: 3px; border-radius: 24px; }
+      .screen-btn { min-height: 36px; padding: 0 11px; border: 0; border-radius: 20px; background: transparent; color: rgba(237, 231, 220, .72); font-size: 13px; font-weight: 600; }
       .screen-btn[aria-current='page'] { background: rgba(255, 255, 255, .9); color: #10131a; box-shadow: 0 2px 10px rgba(0, 0, 0, .25); }
       .pager { position: fixed; inset: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
       .pager::-webkit-scrollbar { display: none; }
       .panel { flex: 0 0 100%; height: 100%; overflow-y: auto; overflow-x: hidden; scroll-snap-align: start; scroll-snap-stop: always; overscroll-behavior-y: contain; scrollbar-width: none; outline: none; }
       .panel::-webkit-scrollbar { display: none; }
       .fold { min-height: 100svh; display: flex; flex-direction: column; }
-      .gap { flex: 1 0 auto; min-height: 30svh; display: flex; justify-content: center; padding: calc(112px + env(safe-area-inset-top, 0px)) 16px 12px; }
-      .caption { width: min(640px, 100%); display: grid; gap: 2px; align-content: start; text-shadow: 0 1px 14px rgba(0, 0, 0, .75), 0 0 2px rgba(0, 0, 0, .6); pointer-events: none; padding-right: 64px; }
+      .gap { flex: 1 0 auto; min-height: 30svh; display: flex; justify-content: center; padding: calc(66px + env(safe-area-inset-top, 0px)) 16px 12px; }
+      .caption { width: min(640px, 100%); display: grid; gap: 2px; align-content: start; text-shadow: 0 1px 14px rgba(0, 0, 0, .75), 0 0 2px rgba(0, 0, 0, .6); pointer-events: none; padding-right: 72px; }
       .cap-day { font: 500 12px var(--f-mono); letter-spacing: .06em; text-transform: uppercase; color: rgba(237, 231, 220, .82); }
       .cap-line { font: italic 500 22px/1.25 var(--f-display); color: var(--ink); }
       .compact { width: min(640px, 100%); margin: 0 auto; padding: 0 12px calc(14px + env(safe-area-inset-bottom, 0px)); }
-      .below { width: min(640px, 100%); margin: 0 auto; padding: 4px 12px calc(56px + env(safe-area-inset-bottom, 0px)); }
+      /* The detail: a full-screen layer that slides up over the world, which blurs and darkens
+         behind it. Its own small title bar replaces the tabs while it is up. */
+      .below { position: relative; min-height: 100svh; padding: 0 max(12px, calc((100% - 640px) / 2)) calc(56px + env(safe-area-inset-bottom, 0px)); border-radius: 28px 28px 0 0; background: rgba(9, 11, 17, .62); -webkit-backdrop-filter: blur(28px) saturate(140%); backdrop-filter: blur(28px) saturate(140%); border-top: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 -18px 40px rgba(0, 0, 0, .35); }
+      .below::before { content: ''; position: absolute; top: 8px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: rgba(255, 255, 255, .28); }
+      .below-bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; padding: calc(16px + env(safe-area-inset-top, 0px)) 2px 12px; margin-bottom: 4px; background: linear-gradient(rgba(9, 11, 17, .92) 70%, rgba(9, 11, 17, 0)); }
+      .below-t { flex: 1; font: 600 20px/1.2 var(--f-display); }
+      .below-up { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .07); color: var(--ink); opacity: 0; transition: opacity .3s; }
+      .below-up svg { width: 20px; height: 20px; }
+      .game[data-lifted='true'] .below-up { opacity: 1; }
       .detail { display: grid; gap: 12px; }
       .detail-body { display: grid; gap: 12px; }
       .compact-today { display: grid; gap: 8px; }
       .sheet-head { display: flex; align-items: center; gap: 12px; }
       .head-l { flex: 1; min-width: 0; display: grid; gap: 6px; }
       .head-sub { margin: 0; font-size: 13px; color: var(--muted); }
+      .head-next { margin: 0; font-size: 12px; color: rgba(237, 231, 220, .62); }
       .sheet-head.past .head-sub { color: var(--warn); font-weight: 600; }
       .pills { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
       .pill { min-height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(255, 255, 255, .05); color: var(--muted); font-size: 13px; font-weight: 600; flex: none; }
@@ -271,14 +295,22 @@
       .gchip-val:empty { display: none; }
 
       /* The flask on every screen: a glass capsule that fills like the real thing. */
-      .flask-btn { --level: 0; position: fixed; z-index: 7; right: 12px; top: calc(112px + env(safe-area-inset-top, 0px)); width: 52px; height: 84px; border-radius: 26px; padding: 0; overflow: hidden; display: grid; place-items: center; align-content: center; gap: 2px; color: var(--ink); touch-action: pan-x pan-y; -webkit-touch-callout: none; user-select: none; opacity: calc(1 - var(--lift, 0) * .6); }
-      .flask-fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--level) * 100%); z-index: -1; background: linear-gradient(180deg, rgba(168, 236, 255, .75), rgba(110, 180, 230, .45)); transition: height .8s cubic-bezier(.2, .9, .3, 1.2); }
-      .flask-fill::before { content: ''; position: absolute; left: -20%; right: -20%; top: -6px; height: 12px; border-radius: 50%; background: rgba(210, 245, 255, .7); animation: slosh 3.2s ease-in-out infinite; }
+      /* The flask on every screen: a ring gauge in the corner, one segment per glass, with the
+         water level showing through its glass core. */
+      .flask-btn { --level: 0; position: fixed; z-index: 7; right: 12px; top: calc(8px + env(safe-area-inset-top, 0px)); width: 46px; height: 46px; border-radius: 50%; padding: 0; border: 0; background: none; color: var(--ink); touch-action: pan-x pan-y; -webkit-touch-callout: none; user-select: none; }
+      .flask-ring { position: absolute; inset: -3px; pointer-events: none; }
+      .flask-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+      .flask-ring circle { fill: none; stroke-width: 3.6; }
+      .ring-bg { stroke: rgba(255, 255, 255, .2); }
+      .ring-on { stroke: var(--frost); filter: drop-shadow(0 0 3px rgba(168, 236, 255, .7)); transition: stroke-dasharray .6s; }
+      .flask-core { position: absolute; inset: 5px; border-radius: 50%; overflow: hidden; isolation: isolate; display: grid; place-items: center; background: linear-gradient(165deg, rgba(255, 255, 255, .18), rgba(255, 255, 255, .03) 55%), rgba(12, 16, 24, .32); -webkit-backdrop-filter: blur(14px) saturate(170%); backdrop-filter: blur(14px) saturate(170%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 6px 18px rgba(0, 0, 0, .3); }
+      .flask-fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--level) * 100%); z-index: -1; background: linear-gradient(180deg, rgba(168, 236, 255, .6), rgba(110, 180, 230, .32)); transition: height .8s cubic-bezier(.2, .9, .3, 1.2); }
+      .flask-fill::before { content: ''; position: absolute; left: -20%; right: -20%; top: -4px; height: 8px; border-radius: 50%; background: rgba(210, 245, 255, .55); animation: slosh 3.2s ease-in-out infinite; }
       @keyframes slosh { 50% { transform: translateX(8%) rotate(3deg); } }
-      .flask-icon { width: 24px; height: 24px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .4)); }
-      .flask-n { font: 600 12px var(--f-mono); text-shadow: 0 1px 4px rgba(0, 0, 0, .5); }
-      .flask-btn[data-due='true'] { border-color: rgba(168, 236, 255, .9); animation: thirst 2.4s ease-in-out infinite; }
-      @keyframes thirst { 50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 6px rgba(168, 236, 255, .18), 0 12px 32px rgba(0, 0, 0, .3); } }
+      .flask-icon { width: 20px; height: 20px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .4)); }
+      .flask-n { position: absolute; left: 50%; top: calc(100% + 5px); transform: translateX(-50%); font: 600 11px var(--f-mono); white-space: nowrap; text-shadow: 0 1px 5px rgba(0, 0, 0, .8); }
+      .flask-btn[data-due='true'] .flask-core { animation: thirst 2.4s ease-in-out infinite; }
+      @keyframes thirst { 50% { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 7px rgba(168, 236, 255, .2), 0 6px 18px rgba(0, 0, 0, .3); } }
       .flask-btn.gulp { animation: gulp .7s cubic-bezier(.3, 1.6, .5, 1); }
       @keyframes gulp { 30% { transform: scale(1.12, .92); } 60% { transform: scale(.95, 1.06); } }
       .flask-btn.holding { transform: scale(.96); transition: transform .7s; }
@@ -317,6 +349,36 @@
       .reel-skip { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 12px); right: 12px; min-height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, .3); background: rgba(255, 255, 255, .1); color: var(--ink); font-weight: 600; z-index: 1; }
       .game.replaying .screens, .game.replaying .flask-btn, .game.replaying .pager { opacity: 0; pointer-events: none; }
       body:has(.game.replaying) .top { opacity: 0; pointer-events: none; }
+
+      /* The opening: the title over the falling snow, then a glass card over the camp. */
+      .onboard { position: fixed; inset: 0; z-index: 30; pointer-events: none; }
+      .onboard > * { pointer-events: auto; }
+      .ob-title { position: absolute; left: 0; right: 0; top: 30svh; display: grid; justify-items: center; gap: 8px; text-align: center; pointer-events: none; text-shadow: 0 2px 24px rgba(0, 0, 0, .6); opacity: 0; animation: obTitle 7.5s ease both; transition: opacity .8s; }
+      .ob-title span { font: 500 46px/1 var(--f-display); letter-spacing: .32em; padding-left: .32em; text-transform: uppercase; }
+      .ob-title small { font: italic 400 17px var(--f-display); color: rgba(237, 231, 220, .8); letter-spacing: .04em; }
+      .ob-title.gone { opacity: 0 !important; animation: none; }
+      @keyframes obTitle { 0%, 8% { opacity: 0; transform: translateY(8px); } 22%, 52% { opacity: 1; transform: none; } 70%, 100% { opacity: 0; } }
+      .ob-skip { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 12px); right: 12px; min-height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, .3); background: rgba(255, 255, 255, .1); color: var(--ink); font-weight: 600; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+      .ob-card { position: absolute; left: 50%; bottom: 0; width: min(560px, 100%); max-height: 86svh; overflow-y: auto; overscroll-behavior: contain; transform: translateX(-50%); border-radius: 28px 28px 0 0; padding: 22px 18px calc(22px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(165deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .03) 48%), rgba(10, 12, 18, .72); animation: obCard .7s cubic-bezier(.2, .8, .2, 1) both; }
+      .ob-card[hidden] { display: none; }
+      .ob-card .welcome { padding-block: 0; }
+      .ob-h { margin: 0; font: 600 26px/1.15 var(--f-display); }
+      @keyframes obCard { from { opacity: 0; transform: translate(-50%, 40px); } }
+      .game.onboarding .screens, .game.onboarding .pager, .game.onboarding .flask-btn, .game.onboarding .labels { opacity: 0; pointer-events: none; }
+      body:has(.game.onboarding) .top { display: none; }
+
+      /* Your mark: symbols and colours as round radio tiles. */
+      .mark-pick { display: grid; gap: 10px; }
+      .mark-row { display: flex; flex-wrap: wrap; gap: 8px; }
+      .mark-opt { position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; color: var(--ink); border: 1px solid rgba(255, 255, 255, .2); background: rgba(255, 255, 255, .05); transition: background .2s, border-color .2s, box-shadow .2s; }
+      .mark-opt input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+      .mark-opt:has(input:checked) { border-color: #fff; background: rgba(255, 255, 255, .16); box-shadow: 0 0 0 3px rgba(255, 255, 255, .16); }
+      .mark-opt:has(input:focus-visible) { outline: 2px solid var(--frost); outline-offset: 2px; }
+      .mark-opt .sym { width: 24px; height: 24px; }
+      .mark-opt .swatch { width: 26px; height: 26px; border-radius: 50%; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3); }
+      /* On a phone the tabs take the top row and the flask sits just under its corner. */
+      @media (max-width: 520px) { .screens { right: 12px; max-width: calc(100% - 74px); } .flask-btn { top: calc(60px + env(safe-area-inset-top, 0px)); } }
+      @media (max-width: 370px) { .screen-btn { padding: 0 8px; font-size: 12px; } }
 
       .flask { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-radius: 22px; }
       .flask[data-due='true'] { border-color: rgba(168, 236, 255, .8); }

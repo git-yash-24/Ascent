@@ -12,6 +12,8 @@ import { clear, h } from '../dom';
 import { habitSummary, longDate, shortDate, SKIP_REASONS, skipLabel } from '../format';
 import { HabitForm } from './habitForm';
 import { tagOf } from '../../core/tags';
+import { EXPEDITION_NAME_MAX } from '../../core/model/schemas';
+import { markPicker } from '../../game/onboard';
 
 export interface Saver {
   /** Offer a file to the viewer. Resolves false when declined or unavailable. */
@@ -63,7 +65,7 @@ export class SetupView {
   render(v: View, section?: string): void {
     const focusId = (document.activeElement as HTMLElement | null)?.id;
     clear(this.body);
-    this.body.append(this.habits(v), this.water(v), this.settings(v), this.correct(v), this.backup(v), this.sync(v));
+    this.body.append(this.habits(v), this.water(v), this.expedition(v), this.settings(v), this.correct(v), this.backup(v), this.sync(v));
     if (section) document.getElementById(section)?.scrollIntoView({ block: 'start' });
     if (focusId) document.getElementById(focusId)?.focus();
   }
@@ -166,6 +168,33 @@ export class SetupView {
       h('div', { class: 'field' }, h('label', { for: 'water-target', text: 'Glasses a day (one glass is about 250 ml)' }), input),
       h('p', { class: 'hint', text: 'While Ascent is open, the bar reminds you when two hours pass without a glass. It cannot notify you while closed.' }),
       h('div', { class: 'row-actions' }, save),
+    );
+  }
+
+  // Your expedition -------------------------------------------------------------------------
+
+  private expedition(v: View): HTMLElement {
+    const ex = v.snapshot.expedition;
+    if (!v.snapshot.profile) return section('setup-expedition', 'Your expedition', 'Finish the first setup to choose a mark.');
+    const pick = markPicker({ ...(ex.symbol ? { symbol: ex.symbol } : {}), ...(ex.accent ? { accent: ex.accent } : {}) });
+    const name = h('input', { id: 'set-exp-name', type: 'text', maxlength: String(EXPEDITION_NAME_MAX), placeholder: 'The long winter', autocomplete: 'off' });
+    name.value = ex.name ?? '';
+    const save = h('button', { class: 'btn primary', text: 'Save mark' });
+    save.addEventListener('click', () => {
+      const m = pick.value();
+      this.say(this.app.saveExpedition({ name: name.value, symbol: m.symbol ?? null, accent: m.accent ?? null }), 'Saved. Ari repaints the flag tonight.');
+    });
+    const clearMark = h('button', { class: 'btn ghost', text: 'No mark' });
+    clearMark.addEventListener('click', () => this.act(this.app.saveExpedition({ symbol: null, accent: null }), 'Mark removed.'));
+    const replay = h('a', { class: 'btn ghost', href: '#today', text: 'Watch the opening again' });
+    replay.addEventListener('click', () => this.app.saveExpedition({ introOn: null }));
+    return section(
+      'setup-expedition',
+      'Your expedition',
+      'Optional. Ari carries your mark on the flag and the pack, and carves it at camp.',
+      h('div', { class: 'field' }, h('span', { class: 'label', text: 'Mark and colour' }), pick.el),
+      h('div', { class: 'field' }, h('label', { for: 'set-exp-name', text: 'Expedition name (optional)' }), name),
+      h('div', { class: 'row-actions' }, save, clearMark, replay),
     );
   }
 

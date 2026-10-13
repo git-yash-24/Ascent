@@ -200,7 +200,7 @@ export class YearSheet {
     const c = v.derived.climb;
     const d = v.derived;
     this.caption.replaceChildren(
-      h('span', { class: 'cap-day', text: `Chapter ${c.chapter + 1} · Stage ${c.stage + 1}` }),
+      h('span', { class: 'cap-day', text: `${v.snapshot.expedition.name ? `${v.snapshot.expedition.name} · ` : ''}Chapter ${c.chapter + 1} · Stage ${c.stage + 1}` }),
       h('span', { class: 'cap-line', text: `${d.lifetime.daysShownUp} ${d.lifetime.daysShownUp === 1 ? 'day' : 'days'} on the mountain` }),
     );
     const inChapter = c.stage % CLIMB.stagesPerChapter;

@@ -10,7 +10,10 @@
  * screen: tap it and Ari drinks, wherever he is.
  * (Xander, 2026-10-13.)
  */
-import type { DateKey } from '../core/model/types';
+import type { Accent, DateKey, TrailSymbol } from '../core/model/types';
+import { campState, momentumStep, weatherOf } from '../core/world';
+import { ACCENTS } from './kit';
+import { markPicker } from './onboard';
 import type { Controller, View } from '../ui/controller';
 import { h } from '../ui/dom';
 import { BaseCampSheet } from './basecamp';
@@ -57,6 +60,10 @@ export class GameView {
   private lastGlasses: number | null = null;
   private mounted = false;
   private playing: { timer: number; date: DateKey } | null = null;
+  private idleTimer = 0;
+  private onboarding: HTMLElement | null = null;
+  private revealed = new Set<string>();
+  private campReady = false;
 
   constructor(private readonly app: Controller) {
     this.canvas = h('canvas', { class: 'world', 'aria-hidden': 'true' });
@@ -86,7 +93,17 @@ export class GameView {
         'section',
         { class: `panel p-${s}`, id: `s-${s}`, 'aria-label': NAME[s], tabindex: '-1' },
         h('div', { class: 'fold' }, gap, h('div', { class: 'compact' }, sheet.compact)),
-        h('div', { class: 'below' }, sheet.detail),
+        h(
+          'div',
+          { class: 'below' },
+          h(
+            'div',
+            { class: 'below-bar' },
+            h('span', { class: 'below-t', text: NAME[s] }),
+            h('button', { class: 'below-up', type: 'button', 'aria-label': `Back to the ${LABEL[s].toLowerCase()} view`, onclick: () => panel.scrollTo({ top: 0, behavior: 'smooth' }) }, chevron()),
+          ),
+          sheet.detail,
+        ),
       );
       new ResizeObserver(() => panel.style.setProperty('--compact', `${sheet.compact.offsetHeight}px`)).observe(sheet.compact);
       panel.addEventListener('scroll', () => this.onPanelScroll(i), { passive: true });
@@ -101,7 +118,7 @@ export class GameView {
     this.labels.append(this.here);
 
     // The flask, on every screen.
-    this.flask = h('button', { class: 'flask-btn glass', type: 'button', 'aria-haspopup': 'dialog' }, h('span', { class: 'flask-fill', 'aria-hidden': 'true' }), flaskIcon(), h('span', { class: 'flask-n' }));
+    this.flask = h('button', { class: 'flask-btn', type: 'button', 'aria-haspopup': 'dialog' }, h('span', { class: 'flask-ring', 'aria-hidden': 'true' }), h('span', { class: 'flask-core', 'aria-hidden': 'true' }, h('span', { class: 'flask-fill' }), flaskIcon()), h('span', { class: 'flask-n', 'aria-hidden': 'true' }));
     holdable(this.flask, { tap: () => this.glass(1), hold: () => this.openFlaskMenu() });
     this.flaskMenu = h('dialog', { class: 'opts flask-menu', 'aria-label': 'Water' });
     this.flaskMenu.addEventListener('click', (e) => {
@@ -117,6 +134,19 @@ export class GameView {
 
     const shade = h('div', { class: 'shade', 'aria-hidden': 'true' });
     this.root = h('div', { class: 'game' }, this.canvas, this.fallback, shade, this.labels, nav, this.pager, this.flask, this.reel, this.announce, opts.el, this.flaskMenu);
+    // The HUD fades when you are not touching anything, and returns on any touch or key.
+    const wake = (): void => {
+      document.body.classList.remove('hud-idle');
+      window.clearTimeout(this.idleTimer);
+      this.idleTimer = window.setTimeout(() => {
+        if (this.root.isConnected && !this.onboarding && !document.querySelector('dialog[open]')) document.body.classList.add('hud-idle');
+      }, 4500);
+    };
+    for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(ev, wake, { passive: true });
+    wake();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') window.setTimeout(() => this.maybeGreet(), 900);
+    });
     window.addEventListener('resize', () => this.go(this.index, false));
     window.addEventListener('keydown', (e) => {
       if (!this.root.isConnected || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || document.querySelector('dialog[open]')) return;
@@ -142,6 +172,107 @@ export class GameView {
     this.index = SCREENS.indexOf(screen);
     requestAnimationFrame(() => this.go(this.index, false));
     this.render(v);
+    window.setTimeout(() => this.maybeGreet(), 1400);
+  }
+
+  // Arrival, onboarding, the camp ------------------------------------------------------------
+
+  /** She looks up when you arrive: the first open of a day, or after 4 hours away. Never on tab switches. */
+  private maybeGreet(): void {
+    if (!this.root.isConnected || this.onboarding || !this.stage) return;
+    const v = this.app.view();
+    if (v.firstRun) return;
+    const KEY = 'ascent:greeted:v1';
+    let last: { day: string; at: number } | null = null;
+    try {
+      last = JSON.parse(localStorage.getItem(KEY) ?? 'null') as { day: string; at: number } | null;
+    } catch {
+      last = null;
+    }
+    const now = Date.now();
+    if (last && last.day === v.today && now - last.at < 4 * 3600_000) return;
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ day: v.today, at: now }));
+    } catch {
+      // without storage she greets at most once per load
+    }
+    this.stage.greet();
+  }
+
+  /**
+   * The opening scene, then a card over the camp: the welcome form for a first launch, or
+   * just your mark for someone who started before the opening existed.
+   */
+  startOnboarding(card: HTMLElement | null): void {
+    if (this.onboarding) return;
+    const v = this.app.view();
+    const title = h('div', { class: 'ob-title', 'aria-hidden': 'true' }, h('span', { text: 'Ascent' }), h('small', { text: 'a year on the mountain' }));
+    const skip = h('button', { class: 'ob-skip', type: 'button' }, 'Skip');
+    const wrap = h('div', { class: 'ob-card glass', hidden: true, role: 'dialog', 'aria-modal': 'true', 'aria-label': card ? 'Begin' : 'Your mark' });
+    if (card) wrap.append(card);
+    else {
+      const ex = v.snapshot.expedition;
+      const pick = markPicker({ ...(ex.symbol ? { symbol: ex.symbol } : {}), ...(ex.accent ? { accent: ex.accent } : {}) }, (m) => this.preview(m));
+      const done = h('button', { class: 'btn primary big', type: 'button' }, 'Done');
+      done.addEventListener('click', () => this.app.saveExpedition({ ...pick.value(), introOn: this.app.today }));
+      const later = h('button', { class: 'btn ghost', type: 'button' }, 'Not now');
+      later.addEventListener('click', () => this.app.saveExpedition({ introOn: this.app.today }));
+      wrap.append(
+        h('h1', { class: 'ob-h', text: 'Your mark' }),
+        h('p', { class: 'intro', text: 'Ari carries it on the flag and the pack, and carves it at the first camp. You can change it any time in Setup.' }),
+        pick.el,
+        h('div', { class: 'row-actions' }, done, later),
+      );
+    }
+    const layer = h('div', { class: 'onboard' }, title, skip, wrap);
+    this.onboarding = layer;
+    this.root.append(layer);
+    this.root.classList.add('onboarding');
+    document.body.classList.remove('hud-idle');
+    const show = (): void => {
+      title.classList.add('gone');
+      skip.hidden = true;
+      wrap.hidden = false;
+      (wrap.querySelector('input, textarea, button') as HTMLElement | null)?.focus();
+    };
+    skip.addEventListener('click', () => (this.stage?.introPlaying ? this.stage.skipIntro() : show()));
+    if (this.stage) this.stage.playIntro(show);
+    else show();
+    skip.focus();
+  }
+
+  private endOnboarding(): void {
+    this.onboarding?.remove();
+    this.onboarding = null;
+    this.root.classList.remove('onboarding');
+    this.stage?.skipIntro();
+  }
+
+  /** Show a mark on the camp while it is being chosen. */
+  preview(m: { symbol?: TrailSymbol; accent?: Accent }): void {
+    this.stage?.setExpedition(m.symbol, ACCENTS[m.accent ?? 'ash']);
+  }
+
+  /** The travelling home: improvements earned by story days; a new one is shown being found. */
+  private renderCamp(v: View): void {
+    if (!this.stage) return;
+    const camp = campState(v.derived.storyDayEarned);
+    const ids = camp.built.map((i) => i.id);
+    this.stage.setCamp(ids);
+    const fresh = ids.filter((id) => !v.snapshot.seen.moments.includes(`camp:${id}`) && !this.revealed.has(id));
+    if (fresh.length === 0) {
+      this.campReady = true;
+      return;
+    }
+    // Reveal only the newest, and only on the Today or Camp screens once the world is up.
+    const id = fresh.at(-1)!;
+    if (this.index <= 1 && !this.onboarding && !this.playing) {
+      for (const f of fresh) this.revealed.add(f);
+      window.setTimeout(() => this.stage?.reveal(id), this.campReady ? 400 : 2200);
+      for (const f of fresh) this.app.markSeen(`camp:${f}`);
+      this.say(`New at camp: ${camp.built.find((i) => i.id === id)?.name ?? 'something'}.`);
+    }
+    this.campReady = true;
   }
 
   private dirty = new Set<number>();
@@ -166,6 +297,15 @@ export class GameView {
       this.stage.setWeek(days);
       this.stage.setStage(v.derived.climb.stage);
       this.stage.setSound(v.snapshot.profile?.settings.sound ?? true);
+      this.stage.setWeather(weatherOf(v.derived, v.today));
+      this.stage.setMomentum(momentumStep(v.derived, v.today));
+      const ex = v.snapshot.expedition;
+      if (!this.onboarding) this.stage.setExpedition(ex.symbol, ACCENTS[ex.accent ?? 'ash']);
+    }
+    if (!v.firstRun) {
+      if (this.onboarding && v.snapshot.expedition.introOn) this.endOnboarding();
+      else if (!this.onboarding && !v.snapshot.expedition.introOn && v.snapshot.profile && this.mounted) this.startOnboarding(null);
+      if (!this.onboarding) this.renderCamp(v);
     }
     this.syncDayLabels(days);
     if (this.lastClosed === false && closed && this.lastToday === v.today) this.say('Camp is made. Ari takes the route.');
@@ -211,6 +351,11 @@ export class GameView {
     this.flask.dataset.due = String(due);
     this.flask.style.setProperty('--level', String(Math.min(1, w.today / Math.max(1, w.target))));
     (this.flask.querySelector('.flask-n') as HTMLElement).textContent = `${w.today}/${w.target}`;
+    const ring = this.flask.querySelector('.flask-ring') as HTMLElement;
+    if (ring.dataset.k !== `${w.today}/${w.target}`) {
+      ring.dataset.k = `${w.today}/${w.target}`;
+      ring.replaceChildren(ringSvg(w.today, w.target));
+    }
     this.flask.setAttribute('aria-label', `Drink a glass of water. ${w.today} of ${w.target} today.${due ? ' Time for water.' : ''} Hold for more.`);
   }
 
@@ -387,6 +532,7 @@ export class GameView {
     const lift = Math.min(1, p.scrollTop / Math.max(1, fold * 0.6));
     this.stage?.setDimmed(lift >= 1);
     this.root.style.setProperty('--lift', String(lift));
+    this.root.dataset.lifted = String(lift > 0.55);
   }
 
   private pendingSay = '';
@@ -424,5 +570,52 @@ function flaskIcon(): SVGSVGElement {
   p.setAttribute('stroke-width', '1.6');
   p.setAttribute('stroke-linejoin', 'round');
   svg.append(p);
+  return svg;
+}
+
+function chevron(): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(NS, 'path');
+  p.setAttribute('d', 'M6 15l6-6 6 6');
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'currentColor');
+  p.setAttribute('stroke-width', '2');
+  p.setAttribute('stroke-linecap', 'round');
+  p.setAttribute('stroke-linejoin', 'round');
+  svg.append(p);
+  return svg;
+}
+
+/** The water ring: one segment per glass of the goal (a continuous arc past 12). */
+function ringSvg(n: number, of: number): SVGSVGElement {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 60 60');
+  const r = 26;
+  const C = 2 * Math.PI * r;
+  const segs = Math.max(1, Math.min(of, 12));
+  const gap = of <= 12 ? 3.2 : 0;
+  const seg = C / segs - gap;
+  const mk = (cls: string, dash: string, off: number): void => {
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', '30');
+    c.setAttribute('cy', '30');
+    c.setAttribute('r', String(r));
+    c.setAttribute('class', cls);
+    c.setAttribute('stroke-dasharray', dash);
+    c.setAttribute('stroke-dashoffset', String(off));
+    svg.append(c);
+  };
+  if (of <= 12) {
+    mk('ring-bg', `${seg} ${gap}`, 0);
+    const filled = Math.min(n, of);
+    if (filled > 0) mk('ring-on', `${Array.from({ length: filled }, () => `${seg} ${gap}`).join(' ')} 0 ${C}`, 0);
+  } else {
+    mk('ring-bg', `${C} 0`, 0);
+    mk('ring-on', `${(Math.min(n, of) / of) * C} ${C}`, 0);
+  }
   return svg;
 }

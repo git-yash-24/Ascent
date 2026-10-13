@@ -303,12 +303,18 @@ function buildSky(): THREE.Group {
 export interface World {
   group: THREE.Group;
   summitLight: THREE.Sprite;
+  /** The sky dome's colours, for time of day. */
+  sky: { zenith: THREE.Color; mid: THREE.Color; horizon: THREE.Color };
+  stars: THREE.PointsMaterial;
   update(t: number): void;
 }
 
 export function buildWorld(scene: THREE.Scene): World {
   const group = new THREE.Group();
-  group.add(buildSky());
+  const skyGroup = buildSky();
+  group.add(skyGroup);
+  const skyMat = (skyGroup.children[0] as THREE.Mesh).material as THREE.ShaderMaterial;
+  const starMat = (skyGroup.children[1] as THREE.Points).material as THREE.PointsMaterial;
   group.add(buildTerrain());
   group.add(buildTrees());
   group.add(buildRocks());
@@ -328,6 +334,8 @@ export function buildWorld(scene: THREE.Scene): World {
   return {
     group,
     summitLight,
+    sky: { zenith: skyMat.uniforms.zenith!.value as THREE.Color, mid: skyMat.uniforms.mid!.value as THREE.Color, horizon: skyMat.uniforms.horizon!.value as THREE.Color },
+    stars: starMat,
     update(t: number) {
       // Two slow green flashes every 7 seconds, then a faint steady glow.
       const cycle = t % 7;

@@ -86,6 +86,33 @@ Calls made this round:
 - **G-15 Replay**: the day's beat, each habit (done first, then not), the flask, the journal line, how it ended; at most 9 captions, 1.25 s each; tap or Close to stop.
 - **G-16 Base camp opens on the Journal tab.** Today's note box floats over the world so you write while he does; earlier pages, trophies, leagues and advice are below.
 
+## MVP round: the opening, companionship, ownership, a living world
+
+Asked for: "whatever can be properly included in the MVP and also a start animation for first
+timers", from everything decided since the last beta (story direction, the attachment and
+Homescapes briefs; the full plan is in the Docs plan, tabs Story Engine, Attachment, Homescapes).
+
+| Piece | Where |
+|---|---|
+| Opening scene: down through the snow to the fire, the knot, the map caught, she looks up, the second cup | `Stage.playIntro`, `introStep`, `introPose`; `GameView.startOnboarding` |
+| Your mark: symbol and colour on the flag, pennants, pack and a carved stone; optional expedition name | `ExpeditionDoc` (schema 1), `src/game/kit.ts`, `src/game/onboard.ts`, Setup "Your expedition" |
+| Camp that travels: improvements by story day, next one named in Today's detail | `src/core/world.ts` (`CAMP_SCHEDULE`, `campState`), `Kit.setBuilt`, `GameView.renderCamp` |
+| Weather from the last ended week; sky by your clock | `weatherOf`, `Stage.setWeather`, `skyAt` |
+| After missed days she watches the trail; the fire burns low; one tap relights it | `momentumStep`, `Stage.setMomentum` |
+| HUD: gear top left, tabs on the top row, flask as a ring gauge, all rest after 4.5 s idle; detail is a full-screen blurred layer with its own title bar | `index.html`, `GameView` |
+
+Calls made this round:
+
+- **G-17 The opening plays once**, on a first launch, before the welcome card (which now sits as glass over the camp). Skip ends it at once; reduced motion shows the still camp with the cup poured. Someone who began before it existed sees it once with a short "Your mark" card. Setup can play it again. Recorded as `expedition.introOn`.
+- **G-18 The mark is optional and decorative**: five symbols, six colours, ash by default. It is part of the record, synced and in backups. No mark is offered for purchase, ever.
+- **G-19 The second cup and seat are yours.** The cup fills when the day closes (with a chime when it happens live) and empties if the day reopens.
+- **G-20 Arrival nod** once per day, or after 4 hours away; never on quick tab switches.
+- **G-21 Camp improvements by story day**: windbreak 5, cooking stone 12, lantern 20, woodpile 30, pennants 45, bench 60, tarp 90, wind chime 120. A new one is shown once (the camera finds it); none is ever taken away.
+- **G-22 Weather is the last ended week**: climb or summit clear, hold snow, slip storm. A climb secured this week clears the sky early. Rest and sick days are always calm. Unchecked habits never make her shiver.
+- **G-23 Momentum floor**: after 1 to 3 missed days she glances back at the trail; at 3 the fire is down to embers. It never gets worse than that, and any effort today ends it at once.
+- **G-24 Touching Ari** makes her look at you at most once every 10 s; the fire still sparks every time.
+- **G-25 User-facing text calls Ari "she".**
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).

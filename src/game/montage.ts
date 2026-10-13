@@ -28,7 +28,7 @@ const ENDING: Record<DayOutcome, string> = {
   partial: 'Partway up',
   rested: 'A rest day',
   excused: 'Sick, excused. The streak holds',
-  missed: 'He stayed by the fire',
+  missed: 'Ari stayed by the fire',
   free: 'Nothing was due',
   inProgress: 'Still being written',
 };

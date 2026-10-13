@@ -21,6 +21,9 @@ import { RISE, SCRIPT, type Rot } from '../prototype/shared/poses';
 import { createSound, type Sound } from '../prototype/shared/audio';
 import { buildFlask, buildJournal, ghostify, type Journal } from './props';
 import { DAY_GAP, WeekTrail, YearRoute, YEAR_STAGES, type Anchor, type TrailDay } from './trail';
+import { buildKit, symbolTexture, type Kit } from './kit';
+import type { TrailSymbol } from '../core/model/types';
+import type { Weather } from '../core/world';
 
 export type { Anchor, TrailDay };
 
@@ -34,13 +37,13 @@ const UP = v(0, 1, 0);
 
 const MONTH_SHOT: Shot = { pos: v(110, 170, 300), look: v(-40, 10, -160) };
 const YEAR_SHOT: Shot = { pos: v(430, 980, 330), look: v(-70, 40, -430) };
-/** How far up the closed day's walk takes him: to tomorrow's camp. */
+/** How far up the closed day's walk takes her: to tomorrow's camp. */
 const WALK_TO = DAY_GAP - 1.6;
 /** The world is framed a little high so the glass checklist sits over the ground. */
 const FRAME_SHIFT = 0.07;
 
 type Phase = 'sit' | 'rise' | 'walk' | 'stand';
-type ActKind = 'drink' | 'nod' | 'look';
+type ActKind = 'drink' | 'nod' | 'look' | 'greet' | 'reveal';
 interface Act {
   kind: ActKind;
   start: number;
@@ -89,6 +92,19 @@ export class Stage {
   private readonly glowTex = glowTexture();
   private readonly sound: Sound;
   private ghost: Climber | null = null;
+  private readonly kit: Kit;
+  private readonly lastLight: THREE.DirectionalLight;
+  private patch: THREE.Mesh | null = null;
+  private weather: Weather = 'calm';
+  private momentum = 0;
+  private lookCooldown = -99;
+  private revealAt: THREE.Vector3 | null = null;
+  private steamT = -1;
+  private intro: { start: number; done: () => void; seg: number; cues: Set<string> } | null = null;
+  private hourOverride: number | null = null;
+  private skyTimer = 99;
+  private hemiBase = 1.35;
+  private teaByClose = false;
   private soundOn = true;
   private readonly reduced: boolean;
 
@@ -154,6 +170,7 @@ export class Stage {
     const lastLight = new THREE.DirectionalLight('#ffb27a', 0.9);
     lastLight.position.set(-80, 18, -40);
     this.scene.add(lastLight);
+    this.lastLight = lastLight;
 
     this.sound = createSound();
     this.world = buildWorld(this.scene);
@@ -173,6 +190,7 @@ export class Stage {
     this.journal.pencil.rotation.set(0.5, 0, 0.3);
     this.journal.pencil.visible = false;
     this.holster();
+    this.kit = buildKit(this.scene);
     this.seat();
 
     const glow = (color: string, opacity = 0): THREE.Sprite => {
@@ -183,6 +201,8 @@ export class Stage {
     this.finder = glow('#ff7a3d');
     this.spark = glow('#ffcf8a');
     this.relief = glow('#9fe7ff');
+    const h = new URLSearchParams(location.search).get('hour');
+    if (h !== null && Number.isFinite(Number(h))) this.hourOverride = Number(h);
     this.snow = this.buildSnow();
 
     const start = (): void => {
@@ -216,6 +236,17 @@ export class Stage {
 
   setDay(d: DayInput): void {
     this.progress = d.progress;
+    // The day-close ritual: your cup is filled when the day is closed, and emptied if it reopens.
+    if (d.closed && !this.teaByClose) {
+      this.teaByClose = true;
+      this.fillCup();
+      if (d.live) this.sound.chime(5);
+    } else if (!d.closed && this.teaByClose) {
+      this.teaByClose = false;
+      const tea = this.kit.yourCup.getObjectByName('tea');
+      if (tea) tea.visible = false;
+      this.steamT = -1;
+    }
     if (d.closed) {
       if (this.phase === 'sit') {
         if (d.live && !this.reduced) this.setPhase('rise');
@@ -224,7 +255,8 @@ export class Stage {
     } else if (this.phase !== 'sit') {
       this.seat();
     }
-    if (this.phase === 'sit') this.camp.fire.target = 0.12 + 0.88 * Math.min(1, d.progress);
+    // After missed days the fire is down to embers until the first effort relights it.
+    if (this.phase === 'sit') this.camp.fire.target = d.progress <= 0 && this.momentum >= 3 ? 0.05 : 0.12 + 0.88 * Math.min(1, d.progress);
   }
 
   setWeek(days: TrailDay[]): void {
@@ -238,6 +270,97 @@ export class Stage {
 
   get anchors(): Anchor[] {
     return this.trail.anchors;
+  }
+
+  /** Your mark and colour: the flag, the carving, the pack patch, Ari's scarf. */
+  setExpedition(symbol: TrailSymbol | undefined, accent: string): void {
+    this.kit.setSymbol(symbol, accent);
+    // The scarf is the neck's direct meshes (ring and tail).
+    for (const ch of this.climber.joints.neck.children) {
+      const m = ch as THREE.Mesh;
+      if (m.isMesh) (m.material as THREE.MeshLambertMaterial).color.set(accent);
+    }
+    if (this.patch) {
+      this.climber.satchel.remove(this.patch);
+      this.patch = null;
+    }
+    if (symbol) {
+      this.patch = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.12), new THREE.MeshLambertMaterial({ map: symbolTexture(symbol, '#efe6d2', accent), transparent: false }));
+      this.patch.position.set(0, -0.02, 0.067);
+      this.climber.satchel.add(this.patch);
+    }
+  }
+
+  /** Camp improvements earned so far (the travelling home). */
+  setCamp(built: string[]): void {
+    this.kit.setBuilt(built);
+  }
+
+  /** Show a newly made improvement: the camera finds it, a little light, a bell. */
+  reveal(id: string): void {
+    const at = this.kit.where(id);
+    if (!at) return;
+    this.revealAt = at;
+    this.act('reveal', this.reduced ? 1.5 : 3.4);
+    this.sound.chime(3);
+    for (let i = 0; i < 10; i++) this.mote('#ffe3b0', at.clone().add(v((Math.random() - 0.5) * 0.8, 0.2, (Math.random() - 0.5) * 0.8)), v(0, 0.4 + Math.random() * 0.4, 0), 1.6, 0.05);
+  }
+
+  /** Arrival: she looks up at you and lifts a hand, then goes back to what she was doing. */
+  greet(): void {
+    if (this.intro || this.montage) return;
+    this.act('greet', 2.6);
+  }
+
+  /** Your cup filled and steaming: the day-close ritual (and the end of the opening). */
+  fillCup(): void {
+    const tea = this.kit.yourCup.getObjectByName('tea');
+    if (tea) tea.visible = true;
+    this.steamT = 0;
+  }
+
+  setWeather(w: Weather): void {
+    this.weather = w;
+  }
+
+  /** 0 to 3 after missed days: the fire lower, her eyes on the trail. Never worse than 3. */
+  setMomentum(step: number): void {
+    this.momentum = Math.max(0, Math.min(3, step));
+  }
+
+  get introPlaying(): boolean {
+    return this.intro !== null;
+  }
+
+  /** The opening scene for a first launch; `done` runs when it ends or is skipped. */
+  playIntro(done: () => void): void {
+    if (this.reduced) {
+      this.fillCup();
+      done();
+      return;
+    }
+    this.intro = { start: this.clock, done, seg: 0, cues: new Set() };
+    this.camPos.copy(this.climber.root.position).add(v(5, 22, 20));
+    this.camLook.copy(this.climber.root.position).add(v(0, 7, -26));
+  }
+
+  skipIntro(): void {
+    if (!this.intro) return;
+    this.endIntro();
+  }
+
+  private endIntro(): void {
+    const i = this.intro;
+    this.intro = null;
+    this.kit.map.visible = false;
+    this.kit.rope.visible = false;
+    if (this.kit.yourCup.parent !== this.kit.group) {
+      this.kit.group.add(this.kit.yourCup);
+      this.kit.yourCup.position.copy(this.kit.yourSeat).add(v(0.6, -0.16, -0.25));
+      this.kit.yourCup.rotation.set(0, 0, 0);
+    }
+    this.fillCup();
+    i?.done();
   }
 
   /** A habit tapped: a spark flies from the chip into the fire; done earns a nod. */
@@ -268,12 +391,15 @@ export class Stage {
 
   /** A touch on the world: Ari looks up at you, or the fire throws sparks. */
   poke(clientX: number, clientY: number): void {
-    if (this.montage) return;
+    if (this.montage || this.intro) return;
     const r = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -(((clientY - r.top) / r.height) * 2 - 1));
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
     if (ray.intersectObject(this.climber.root, true).length) {
+      // A glance, not a toy: once every 10 seconds at most.
+      if (this.clock - this.lookCooldown < 10) return;
+      this.lookCooldown = this.clock;
       this.act('look', 2.4);
       this.puff(1.4);
       return;
@@ -442,9 +568,12 @@ export class Stage {
     const a = this.snow.geometry.attributes.position as THREE.BufferAttribute;
     const c = this.camera.position;
     const t = this.clock;
+    // The week's weather: sparse when climbing, thicker when holding, driven sideways in a storm.
+    const wx = this.intro ? 1.2 : this.weather === 'storm' ? 2.4 : this.weather === 'snow' ? 0.5 : 0.15;
+    const fall = this.intro ? 1.6 : this.weather === 'storm' ? 2.2 : this.weather === 'snow' ? 1.3 : 1;
     for (let i = 0; i < a.count; i++) {
-      let x = a.getX(i) + Math.sin(t * 0.7 + i) * 0.2 * dt;
-      let y = a.getY(i) - (0.35 + (i % 7) * 0.05) * dt;
+      let x = a.getX(i) + (Math.sin(t * 0.7 + i) * 0.2 + wx) * dt;
+      let y = a.getY(i) - (0.35 + (i % 7) * 0.05) * fall * dt;
       let z = a.getZ(i) + 0.15 * dt;
       if (y < c.y - 9) y += 18;
       if (x < c.x - 15) x += 30;
@@ -454,7 +583,8 @@ export class Stage {
       a.setXYZ(i, x, y, z);
     }
     a.needsUpdate = true;
-    (this.snow.material as THREE.PointsMaterial).opacity = 0.7 * (1 - clamp01(this.view - 1.6));
+    const amount = this.intro ? 0.9 : this.weather === 'storm' ? 1 : this.weather === 'snow' ? 0.85 : this.weather === 'clear' ? 0.18 : 0.5;
+    (this.snow.material as THREE.PointsMaterial).opacity = amount * (1 - clamp01(this.view - 1.6));
   }
 
   private mote(color: string, from: THREE.Vector3, vel: THREE.Vector3, life: number, size: number): void {
@@ -494,7 +624,13 @@ export class Stage {
       if (!this.reduced) {
         const glance = smooth(Math.sin(this.clock * 0.29) * 1.6 - 0.9);
         pose = blendJ(pose, { head: add(pose.j.head, [-0.45 * glance, Math.sin(this.clock * 0.21) * 0.28 * (1 - glance), 0]) }, 1);
+        // After missed days she keeps looking back toward the trail, ready to go.
+        if (this.momentum >= 2 && this.progress <= 0) {
+          const back = (this.momentum / 3) * smooth(Math.sin(this.clock * 0.17 + 1) * 1.4 - 0.1);
+          pose = blendJ(pose, { spine: add(pose.j.spine, [-0.1, 0.35, 0]), neck: [0, 0.45, 0], head: [-0.1, 0.7, 0] }, back);
+        }
       }
+      if (this.intro) pose = this.introPose(pose);
     } else if (this.phase === 'rise') {
       if (t > 0.6 && t < 0.7) this.camp.fire.target = 1;
       if (t < SCRIPT.turn) pose = c.sample(RISE, t);
@@ -610,6 +746,15 @@ export class Stage {
     const nodT = this.actT('nod');
     if (nodT >= 0) pose = blendJ(pose, { head: add(pose.j.head, [0.35, 0, 0]) }, Math.sin(clamp01(nodT / 0.8) * Math.PI));
 
+    // Arrival: she looks up and lifts a hand to you.
+    const greetT = this.actT('greet');
+    if (greetT >= 0) {
+      const w = smooth(clamp01(greetT / 0.5)) * (1 - smooth(clamp01((greetT - 1.9) / 0.7)));
+      const hand = smooth(clamp01((greetT - 0.4) / 0.4)) * (1 - smooth(clamp01((greetT - 1.5) / 0.5)));
+      pose = blendJ(pose, { neck: [-0.08, 0, 0], head: [-0.25, 0.1, 0] }, w);
+      pose = blendJ(pose, { shoulderR: [-2.0, 0, 0.35], elbowR: [-0.8, 0, 0] }, hand);
+    }
+
     // A look when touched: he turns his head toward you.
     const lookT = this.actT('look');
     if (lookT >= 0) {
@@ -622,6 +767,131 @@ export class Stage {
 
     this.acts = this.acts.filter((a) => this.clock - a.start < a.dur);
     return pose;
+  }
+
+  /**
+   * The opening, in five shots (seconds from the start):
+   *   0    the camera falls through the snow onto the camp at dusk
+   *   3.5  close on her hands, finishing a knot
+   *   7    the map slips from her lap; she catches it, a little embarrassed
+   *   10   from your seat: she looks up at you, and nods
+   *   13   she holds out the second cup; then it sits by your seat, steaming
+   */
+  private introPose(base: Pose): Pose {
+    const i = this.intro;
+    if (!i) return base;
+    const t = this.clock - i.start;
+    let pose = base;
+    const knot = smooth(clamp01((t - 3) / 0.6)) * (1 - smooth(clamp01((t - 7.2) / 0.4)));
+    if (knot > 0) {
+      const tw = Math.sin(t * 7) * 0.12;
+      pose = blendJ(pose, { spine: [0.55, 0, 0], neck: [0.2, 0, 0], head: [0.5, 0, 0], shoulderL: [-0.85, 0, -0.35], elbowL: [-0.95, 0, -0.45 + tw], shoulderR: [-0.85, 0, 0.35], elbowR: [-0.95, 0, 0.45 + tw] }, knot);
+    }
+    const reach = smooth(clamp01((t - 7.9) / 0.35)) * (1 - smooth(clamp01((t - 8.9) / 0.5)));
+    if (reach > 0) pose = blendJ(pose, { spine: [0.75, 0.15, 0], head: [0.45, -0.2, 0], shoulderR: [-0.55, 0, -0.3], elbowR: [-0.2, 0, 0] }, reach);
+    const sheepish = smooth(clamp01((t - 9.2) / 0.3)) * (1 - smooth(clamp01((t - 9.9) / 0.3)));
+    if (sheepish > 0) pose = blendJ(pose, { head: [-0.05, 0.3, 0.08] }, sheepish);
+    const look = smooth(clamp01((t - 10.1) / 0.5)) * (1 - smooth(clamp01((t - 15.4) / 0.6)));
+    if (look > 0) {
+      const nod = Math.sin(clamp01((t - 11.6) / 0.7) * Math.PI) * 0.3;
+      pose = blendJ(pose, { neck: [-0.05, 0, 0], head: [-0.32 + nod, 0, 0], spine: [0.3, 0, 0] }, look);
+    }
+    const offer = smooth(clamp01((t - 13) / 0.6)) * (1 - smooth(clamp01((t - 15.1) / 0.4)));
+    if (offer > 0) pose = blendJ(pose, { spine: [0.38, 0, 0], shoulderR: [-1.45, 0, 0.1], elbowR: [-0.3, 0, 0] }, offer);
+    return pose;
+  }
+
+  /** Props and cuts for the opening; returns its camera, or null when it is over. */
+  private introStep(): { shot: Shot; cut: boolean } | null {
+    const i = this.intro;
+    if (!i) return null;
+    const t = this.clock - i.start;
+    const c = this.climber;
+    const yaw = c.root.rotation.y;
+    const local = (x: number, y: number, z: number): THREE.Vector3 => v(x, y, z).applyAxisAngle(UP, yaw).add(c.root.position);
+    const hand = (j: THREE.Object3D): THREE.Vector3 => j.localToWorld(v(0, -0.32, 0.02));
+    const kit = this.kit;
+    // The map on her lap, slipping, caught.
+    kit.map.visible = t > 3 && t < 10.5;
+    if (t < 7.6) kit.map.position.copy(local(0.2, 0.64, 0.32));
+    else if (t < 8.1) kit.map.position.copy(local(0.2, 0.64, 0.32).lerp(local(0.62, 0.08, 0.18), ease(clamp01((t - 7.6) / 0.45))));
+    else if (t < 8.5) kit.map.position.copy(local(0.62, 0.08, 0.18));
+    else kit.map.position.copy(hand(c.joints.elbowR));
+    kit.map.rotation.set(0, yaw + (t > 7.6 && t < 8.5 ? 0.6 : 0), t > 7.6 && t < 8.5 ? 0.3 : 0);
+    if (t > 7.6 && !i.cues.has('slip')) {
+      i.cues.add('slip');
+      this.sound.rustle();
+    }
+    // The rope between her hands while she ties the knot.
+    kit.rope.visible = t > 3.4 && t < 7.1;
+    if (kit.rope.visible) {
+      kit.rope.position.copy(hand(c.joints.elbowL).lerp(hand(c.joints.elbowR), 0.5));
+      kit.rope.rotation.set(Math.PI / 2, 0, t * 2);
+    }
+    // The second cup: in her hand, then by your seat.
+    if (t > 13.3 && t < 15.2 && kit.yourCup.parent !== c.joints.elbowR) {
+      c.joints.elbowR.add(kit.yourCup);
+      kit.yourCup.position.set(0, -0.34, 0.03);
+      kit.yourCup.rotation.set(Math.PI / 2, 0, 0);
+    }
+    if (t >= 15.2 && kit.yourCup.parent !== kit.group) {
+      kit.group.add(kit.yourCup);
+      kit.yourCup.position.copy(kit.yourSeat).add(v(0.6, -0.16, -0.25));
+      kit.yourCup.rotation.set(0, 0, 0);
+      this.fillCup();
+      this.sound.chime(4);
+    }
+    if (t >= 11.6 && !i.cues.has('nod')) {
+      i.cues.add('nod');
+      this.puff(1.2);
+    }
+    const head = new THREE.Vector3();
+    c.joints.head.getWorldPosition(head);
+    const cup = kit.yourCup.getWorldPosition(new THREE.Vector3());
+    const seat = kit.yourSeat.clone();
+    const segs: Array<[number, () => Shot]> = [
+      [0, () => {
+        // Down through the snow from high on the slope, to the fire.
+        const u = ease(clamp01(t / 3.5));
+        const at = c.root.position;
+        return { pos: at.clone().add(v(5, 22, 20)).lerp(local(1.5, 1.35, 3.2), u), look: at.clone().add(v(0, 7, -26)).lerp(local(0, 0.65, 0), u) };
+      }],
+      [3.5, () => ({ pos: local(0.8, 1.0, 1.55).lerp(local(0.6, 0.92, 1.3), clamp01((t - 3.5) / 3.5)), look: local(0, 0.52, 0.3) })],
+      [7, () => ({ pos: local(1.9, 1.05, 1.7), look: local(0.35, 0.38, 0.2) })],
+      [10, () => ({ pos: seat.clone().add(v(0, 0.78, 0.3)).lerp(seat.clone().add(v(0, 0.74, 0.05)), clamp01((t - 10) / 5)), look: head.clone().add(v(0, -0.12, 0)) })],
+      [15.2, () => ({ pos: cup.clone().add(v(0.42, 0.34, 0.5)), look: cup.clone().add(v(0, 0.05, 0)) })],
+    ];
+    let k = 0;
+    for (let n = 0; n < segs.length; n++) if (t >= segs[n]![0]) k = n;
+    if (t > 16.8) {
+      this.endIntro();
+      return null;
+    }
+    const isCut = k !== i.seg;
+    i.seg = k;
+    return { shot: segs[k]![1](), cut: isCut };
+  }
+
+  /** Sky, fog and light by the hour of your clock (?hour= overrides it for review). */
+  private applySky(): void {
+    const now = new Date();
+    const hour = this.hourOverride ?? now.getHours() + now.getMinutes() / 60;
+    const k = skyAt(hour);
+    const sky = this.world.sky;
+    sky.zenith.set(k.zenith);
+    sky.mid.set(k.mid);
+    sky.horizon.set(k.horizon);
+    this.world.stars.opacity = k.stars;
+    const fog = this.scene.fog as THREE.Fog;
+    fog.color.copy(k.fog);
+    const storm = this.weather === 'storm' && this.view < 1.6;
+    fog.near = storm ? 8 : 30;
+    fog.far = storm ? 420 : 1300;
+    this.hemi.color.copy(k.hemiSky);
+    this.hemi.groundColor.copy(k.hemiGround);
+    this.hemiBase = k.hemi;
+    this.lastLight.color.copy(k.sun);
+    this.lastLight.intensity = k.sunI;
   }
 
   private cued = new Set<string>();
@@ -754,8 +1024,26 @@ export class Stage {
 
     const pose = this.compose(dt);
     c.setPose(pose);
-    const cold = this.phase === 'sit' ? 1 - this.camp.fire.level : 0.4;
-    c.overlay(this.clock, clamp01(cold), !this.reduced);
+    // Cold comes from the weather, never from an unchecked habit (decision A-8).
+    const cold = this.weather === 'storm' ? 0.75 : this.weather === 'snow' ? 0.45 : 0.12;
+    c.overlay(this.clock, cold, !this.reduced);
+    this.kit.update(this.clock);
+
+    // The sky follows your clock; checked every second.
+    this.skyTimer += dt;
+    if (this.skyTimer > 1) {
+      this.skyTimer = 0;
+      this.applySky();
+    }
+
+    // Steam from your cup once it is filled.
+    if (this.steamT >= 0) {
+      this.steamT += dt;
+      if (Math.floor(this.steamT / 1.1) !== Math.floor((this.steamT - dt) / 1.1) && this.view < 1.6) {
+        const at = this.kit.yourCup.getWorldPosition(new THREE.Vector3()).add(v(0, 0.09, 0));
+        this.mote('#f2ece4', at, v((Math.random() - 0.5) * 0.04, 0.16, 0), 2.2, 0.11);
+      }
+    }
 
     // The spark from a tapped chip.
     if (this.sparkT >= 0) {
@@ -784,7 +1072,7 @@ export class Stage {
     } else this.relief.material.opacity = 0;
     const glow = this.reliefT >= 0 ? Math.sin(clamp01(this.reliefT / 1.6) * Math.PI) : 0;
     this.renderer.toneMappingExposure = 1.12 + glow * 0.16;
-    this.hemi.intensity = 1.35 + glow * 0.35;
+    this.hemi.intensity = this.hemiBase + glow * 0.35;
 
     // Breath when cold, more often after the climb.
     if (Math.floor(this.clock / 3.8) !== Math.floor((this.clock - dt) / 3.8) && cold > 0.3 && this.view < 1.6) this.puff(1);
@@ -812,10 +1100,19 @@ export class Stage {
     this.route.update(yearV, this.clock);
     this.updateSnow(dt);
 
-    // Camera: the replay's cuts, or the screen's shot.
-    const m = this.montageShot();
-    const want = this.debugShot ?? (m ? m.shot : this.camShot());
-    if (m?.cut) {
+    // Camera: the opening, the replay's cuts, a reveal, or the screen's shot.
+    const intro = this.introStep();
+    const m = intro ?? this.montageShot();
+    let want = this.debugShot ?? (m ? m.shot : this.camShot());
+    const revealT = this.actT('reveal');
+    if (revealT >= 0 && this.revealAt && !m) {
+      const T = this.reduced ? 1.5 : 3.4;
+      const w = smooth(clamp01(revealT / 0.7)) * (1 - smooth(clamp01((revealT - (T - 0.8)) / 0.8)));
+      const at = this.revealAt;
+      const from = at.clone().add(v(1.6, 1.2, 2.2));
+      want = { pos: want.pos.clone().lerp(from, w), look: want.look.clone().lerp(at, w) };
+    }
+    if (m?.cut || (intro && this.intro?.seg === 0)) {
       this.camPos.copy(want.pos);
       this.camLook.copy(want.look);
     } else {
@@ -825,7 +1122,7 @@ export class Stage {
     }
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
-    this.shift += ((this.montage || this.debugShot ? 0 : FRAME_SHIFT) - this.shift) * (1 - Math.exp(-dt * 4));
+    this.shift += ((this.montage || this.intro || this.debugShot ? 0 : FRAME_SHIFT) - this.shift) * (1 - Math.exp(-dt * 4));
     const w = this.canvas.clientWidth || 1;
     const h = this.canvas.clientHeight || 1;
     this.camera.setViewOffset(w, h, 0, h * this.shift, w, h);
@@ -864,4 +1161,47 @@ function smooth(t: number): number {
 
 function ease(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+interface SkyKey {
+  zenith: THREE.Color;
+  mid: THREE.Color;
+  horizon: THREE.Color;
+  fog: THREE.Color;
+  hemiSky: THREE.Color;
+  hemiGround: THREE.Color;
+  hemi: number;
+  sun: THREE.Color;
+  sunI: number;
+  stars: number;
+}
+
+const C = (h: string): THREE.Color => new THREE.Color(h);
+const NIGHT: SkyKey = { zenith: C('#05070f'), mid: C('#0f1428'), horizon: C('#232640'), fog: C('#141726'), hemiSky: C('#2c3360'), hemiGround: C('#0e0c0a'), hemi: 0.8, sun: C('#8fa4d8'), sunI: 0.18, stars: 0.95 };
+const DAWN: SkyKey = { zenith: C('#1b2546'), mid: C('#5d4f75'), horizon: C('#e6936a'), fog: C('#6e5a6a'), hemiSky: C('#6b6f9c'), hemiGround: C('#2a2218'), hemi: 1.15, sun: C('#ffb98a'), sunI: 0.75, stars: 0.25 };
+const DAY: SkyKey = { zenith: C('#335b93'), mid: C('#7fa6cc'), horizon: C('#cfdce4'), fog: C('#8d9fb2'), hemiSky: C('#a9bbd8'), hemiGround: C('#463b2c'), hemi: 1.5, sun: C('#fff0d8'), sunI: 1.0, stars: 0 };
+const DUSK: SkyKey = { zenith: C('#141a33'), mid: C('#4a3a5c'), horizon: C('#d8875a'), fog: C('#5a4b5e'), hemiSky: C('#7a7eac'), hemiGround: C('#2e261b'), hemi: 1.35, sun: C('#ffb27a'), sunI: 0.9, stars: 0.55 };
+const SKY_KEYS: Array<[number, SkyKey]> = [[0, NIGHT], [5, NIGHT], [6.5, DAWN], [8.5, DAY], [16, DAY], [18.3, DUSK], [20.3, NIGHT], [24, NIGHT]];
+
+/** The sky at an hour of the day, blended between night, dawn, day and dusk. */
+export function skyAt(hour: number): SkyKey {
+  const h = ((hour % 24) + 24) % 24;
+  let i = 0;
+  while (i < SKY_KEYS.length - 2 && h >= SKY_KEYS[i + 1]![0]) i++;
+  const [h0, a] = SKY_KEYS[i]!;
+  const [h1, b] = SKY_KEYS[i + 1]!;
+  const u = smooth((h - h0) / Math.max(0.001, h1 - h0));
+  const mix = (x: THREE.Color, y: THREE.Color): THREE.Color => x.clone().lerp(y, u);
+  return {
+    zenith: mix(a.zenith, b.zenith),
+    mid: mix(a.mid, b.mid),
+    horizon: mix(a.horizon, b.horizon),
+    fog: mix(a.fog, b.fog),
+    hemiSky: mix(a.hemiSky, b.hemiSky),
+    hemiGround: mix(a.hemiGround, b.hemiGround),
+    hemi: a.hemi + (b.hemi - a.hemi) * u,
+    sun: mix(a.sun, b.sun),
+    sunI: a.sunI + (b.sunI - a.sunI) * u,
+    stars: a.stars + (b.stars - a.stars) * u,
+  };
 }

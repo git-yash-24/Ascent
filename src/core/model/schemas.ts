@@ -4,7 +4,7 @@
  */
 import { z } from 'zod';
 import { isDateKey, weekStart } from './date';
-import type { CorrectionsDoc, Entry, HabitsDoc, MonthLog, NotesDoc, Profile, SeenDoc } from './types';
+import type { CorrectionsDoc, Entry, ExpeditionDoc, HabitsDoc, MonthLog, NotesDoc, Profile, SeenDoc } from './types';
 
 export const CURRENT_SCHEMA = {
   profile: 2,
@@ -13,6 +13,7 @@ export const CURRENT_SCHEMA = {
   seen: 1,
   corrections: 1,
   notes: 1,
+  expedition: 1,
 } as const;
 
 export type DocKind = keyof typeof CURRENT_SCHEMA;
@@ -145,6 +146,18 @@ export const notesSchema = z
   })
   .strict();
 
+export const EXPEDITION_NAME_MAX = 40;
+
+export const expeditionSchema = z
+  .object({
+    schema: z.literal(CURRENT_SCHEMA.expedition),
+    name: z.string().trim().min(1).max(EXPEDITION_NAME_MAX).optional(),
+    symbol: z.enum(['peak', 'star', 'wave', 'pine', 'flame']).optional(),
+    accent: z.enum(['ember', 'moss', 'glacier', 'plum', 'ochre', 'ash']).optional(),
+    introOn: dateKey.optional(),
+  })
+  .strict();
+
 export const correctionsSchema = z
   .object({
     schema: z.literal(CURRENT_SCHEMA.corrections),
@@ -181,6 +194,7 @@ export const parse = {
   log: (x: unknown): ParseResult<MonthLog> => wrap(monthLogSchema as z.ZodType<MonthLog, z.ZodTypeDef, unknown>, x),
   seen: (x: unknown): ParseResult<SeenDoc> => wrap(seenSchema as z.ZodType<SeenDoc, z.ZodTypeDef, unknown>, x),
   notes: (x: unknown): ParseResult<NotesDoc> => wrap(notesSchema as z.ZodType<NotesDoc, z.ZodTypeDef, unknown>, x),
+  expedition: (x: unknown): ParseResult<ExpeditionDoc> => wrap(expeditionSchema as z.ZodType<ExpeditionDoc, z.ZodTypeDef, unknown>, x),
   corrections: (x: unknown): ParseResult<CorrectionsDoc> =>
     wrap(correctionsSchema as z.ZodType<CorrectionsDoc, z.ZodTypeDef, unknown>, x),
   entry: (x: unknown): ParseResult<Entry> => wrap(entrySchema as z.ZodType<Entry, z.ZodTypeDef, unknown>, x),

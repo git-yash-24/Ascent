@@ -28,6 +28,7 @@ export interface BackupFile {
     seen: unknown;
     corrections: unknown;
     notes?: unknown;
+    expedition?: unknown;
     logs: Record<string, unknown>;
   };
 }
@@ -45,6 +46,7 @@ export function exportBackup(s: Snapshot, app: string, now: number): BackupFile 
       seen: s.seen,
       corrections: s.corrections,
       notes: s.notes,
+      expedition: s.expedition,
       logs: s.logs,
     },
   };
@@ -113,7 +115,7 @@ export function parseBackup(text: string): ParsedBackup {
     if (schemaOf(docs.profile) !== r.value.schema) migrated.push('profile');
     s.profile = r.value;
   }
-  for (const kind of ['habits', 'seen', 'corrections', 'notes'] as const) {
+  for (const kind of ['habits', 'seen', 'corrections', 'notes', 'expedition'] as const) {
     if (docs[kind] === undefined) continue;
     const r = load(kind, docs[kind]);
     if (!r.ok) return { ok: false, error: `${kind}: ${r.error}` };

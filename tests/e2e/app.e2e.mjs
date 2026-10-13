@@ -53,6 +53,9 @@ async function start(page) {
 
 /** Begin and stay on the game screen. */
 async function startGame(page) {
+  // With the world the opening scene plays first; Skip ends it and shows the card.
+  await page.locator('.ob-skip:visible, .ob-card:not([hidden])').first().waitFor();
+  if (await page.locator('.ob-skip').isVisible()) await page.getByRole('button', { name: 'Skip' }).click();
   await page.getByRole('button', { name: 'Begin the climb' }).click();
   await page.locator('.gchip').first().waitFor();
 }
@@ -382,6 +385,50 @@ await test('game: base camp journal saves and survives a reload; leagues follow 
   assert(await page.getByRole('article', { name: 'Medical exams league' }).isVisible(), 'no league for the tag group');
   await page.getByRole('tab', { name: 'Trophies' }).click();
   assert((await page.locator('.trophy.on').count()) >= 1, 'no trophy for showing up');
+});
+
+await test('game: the mark is optional, saved with the record, and asked once of an existing climber', async (page) => {
+  await page.getByRole('radio', { name: 'Pine' }).check();
+  await page.getByRole('radio', { name: 'Moss' }).check();
+  await startGame(page);
+  const ex = await page.evaluate(() => window.__ascent.app.view().snapshot.expedition);
+  assert(ex.symbol === 'pine' && ex.accent === 'moss' && typeof ex.introOn === 'string', `expedition ${JSON.stringify(ex)}`);
+  assert(!(await page.locator('.onboard').count()), 'the opening layer stayed up');
+  // Someone who began before the opening existed: a short mark card, once.
+  await page.evaluate(() => window.__ascent.app.saveExpedition({ introOn: null }));
+  await page.getByRole('dialog', { name: 'Your mark' }).waitFor();
+  await page.getByRole('button', { name: 'Not now' }).click();
+  await page.locator('.onboard').waitFor({ state: 'detached' });
+  await page.reload();
+  await page.locator('.gchip').first().waitFor();
+  assert(!(await page.locator('.onboard').count()), 'asked again after Not now');
+});
+
+await test('game: the detail is a full-screen layer with its own title bar; the HUD steps aside', async (page) => {
+  await startGame(page);
+  await page.locator('#s-today').evaluate((p) => p.scrollTo({ top: p.scrollHeight }));
+  await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'true');
+  const bar = await page.locator('#s-today .below-bar').boundingBox();
+  assert(bar.y < 4, `title bar at ${bar.y}`);
+  assert((await page.locator('.screens').evaluate((e) => getComputedStyle(e).opacity)) === '0', 'tabs still over the detail');
+  await page.getByRole('button', { name: 'Back to the today view' }).click();
+  await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'false');
+});
+
+await test('Setup: change the mark and name; watch the opening again', async (page) => {
+  await startGame(page);
+  await page.getByRole('link', { name: 'Setup' }).click();
+  const sec = page.getByRole('region', { name: 'Your expedition' });
+  await sec.getByRole('radio', { name: 'Star' }).check();
+  await sec.getByLabel('Expedition name (optional)').fill('The long winter');
+  await sec.getByRole('button', { name: 'Save mark' }).click();
+  const ex = await page.evaluate(() => window.__ascent.app.view().snapshot.expedition);
+  assert(ex.symbol === 'star' && ex.name === 'The long winter', `expedition ${JSON.stringify(ex)}`);
+  await sec.getByRole('link', { name: 'Watch the opening again' }).click();
+  await page.getByRole('dialog', { name: 'Your mark' }).waitFor();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await page.locator('.onboard').waitFor({ state: 'detached' });
+  assert((await page.evaluate(() => window.__ascent.app.view().snapshot.expedition.symbol)) === 'star', 'mark lost after the opening');
 });
 
 await test('game: closing the day plays the reward and says so (with the world)', async (page) => {

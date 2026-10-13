@@ -143,6 +143,26 @@ export interface Snapshot {
   seen: SeenDoc;
   corrections: CorrectionsDoc;
   notes: NotesDoc;
+  expedition: ExpeditionDoc;
+}
+
+/** Trail symbols: one marks Ari's flag and pack and is carved at the first camp. */
+export type TrailSymbol = 'peak' | 'star' | 'wave' | 'pine' | 'flame';
+/** Accent colours for Ari's scarf and the tent ribbon. */
+export type Accent = 'ember' | 'moss' | 'glacier' | 'plum' | 'ochre' | 'ash';
+
+/**
+ * The person's expedition: small, optional, personal marks. Ari stays Ari; these make the
+ * journey theirs (docs/decisions: model D). Private, like everything else.
+ */
+export interface ExpeditionDoc {
+  schema: number;
+  /** An optional name for the journey, shown only to the person. */
+  name?: string;
+  symbol?: TrailSymbol;
+  accent?: Accent;
+  /** The day the opening scene was seen or skipped; it plays once. */
+  introOn?: DateKey;
 }
 
 /** The person's journal: at most one short note per day. Stored as `notes` (the word journal is
