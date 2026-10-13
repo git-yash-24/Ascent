@@ -381,6 +381,18 @@
       .game.onboarding .screens, .game.onboarding .pager, .game.onboarding .flask-btn, .game.onboarding .labels { opacity: 0; pointer-events: none; }
       body:has(.game.onboarding) .top { display: none; }
 
+      /* Environment Lab: a small glass panel over the camp. */
+      .lab { position: fixed; z-index: 25; left: 12px; right: 12px; top: calc(60px + env(safe-area-inset-top, 0px)); max-width: 420px; margin: 0 auto; border-radius: 20px; padding: 12px; display: grid; gap: 10px; font-size: 14px; }
+      .lab-row { display: flex; align-items: center; gap: 10px; }
+      .lab-row input[type='range'] { flex: 1; }
+      .lab-row select { flex: 1; min-height: 40px; }
+      .lab-note { flex: 1; color: var(--muted); font-size: 12px; }
+      .lab-time, .lab-fps { font: 500 13px var(--f-mono); font-variant-numeric: tabular-nums; }
+      .lab-fps { color: var(--muted); }
+      .lab-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+      .setup-parts { margin-bottom: 4px; }
+      .linklike { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; cursor: pointer; }
+
       /* Your mark: symbols and colours as round radio tiles. */
       .mark-pick { display: grid; gap: 10px; }
       .mark-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -530,6 +542,14 @@
       .opt-sick { border-color: #8a8f99; }
       .opts-foot { display: flex; justify-content: space-between; gap: 8px; }
       .opts-day { font: 500 14px var(--f-body); color: var(--warn); }
+      /* The flask close-up: the scene stays visible above the sheet. */
+      dialog.flask-menu::backdrop { background: rgba(0, 0, 0, .08); }
+      .flask-sheet { display: grid; gap: 10px; }
+      .flask-big { margin: 0; font-size: 15px; color: var(--muted); }
+      .flask-big strong { font: 600 30px var(--f-mono); color: var(--ink); margin-right: 4px; font-variant-numeric: tabular-nums; }
+      .flask-times { margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+      .flask-times .label { color: var(--muted); }
+      .flask-sheet .opts-row .btn { flex: 1; min-height: 48px; }
       .opt-done { flex: 1; min-height: 48px; }
       .opt-done.undone { border-color: rgba(255, 255, 255, .3); }
       /* Undo, for a few seconds after a change: it puts back exactly what was there. */

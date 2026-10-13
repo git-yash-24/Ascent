@@ -53,3 +53,11 @@ reduced motion, keyboard, ghost click.
 ## Open decisions (from the plan, §9)
 
 1. Weather canon. 2. Flask gesture. 3. Replay honesty. 4. Motion sensors. 5. Device target.
+
+## Progress
+
+- Phase 1 done (G-34 to G-37): tabs only, the HUD hides with a safe wake, full-width open-first rows.
+- Decisions on §9: weather canon kept (ambience only), flask hold = close-up, honest replays with
+  recorded times, shake opt-in. Device target still open.
+- Phase 2 done (G-38 to G-41): action times recorded, the flask as a world prop with a close-up,
+  Setup in parts, Environment Lab. Phase 5's timestamp prerequisite is now met going forward.

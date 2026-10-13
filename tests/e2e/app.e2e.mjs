@@ -219,7 +219,8 @@ await test('Setup: add, edit, archive, restore, correct the record', async (page
   await page.getByRole('button', { name: 'Restore Anki' }).waitFor();
   await page.getByRole('button', { name: 'Restore Anki' }).tap();
   await page.getByRole('button', { name: 'Edit Anki' }).waitFor();
-  // Correct the record: a future date is refused.
+  // Correct the record (in Data): a future date is refused.
+  await page.getByRole('button', { name: 'Data', exact: true }).tap();
   await page.locator('#fix-date').fill('2099-01-01');
   await page.locator('#fix-value').fill('1');
   await page.getByRole('button', { name: 'Correct the record' }).tap();
@@ -454,6 +455,7 @@ await test('game: the detail is a full-screen layer with its own title bar; the 
 await test('Setup: change the mark and name; watch the opening again', async (page) => {
   await startGame(page);
   await page.getByRole('link', { name: 'Setup' }).click();
+  await page.getByRole('button', { name: 'You & day', exact: true }).click();
   const sec = page.getByRole('region', { name: 'Your expedition' });
   await sec.getByRole('radio', { name: 'Star' }).check();
   await sec.getByLabel('Expedition name (optional)').fill('The long winter');
@@ -504,6 +506,39 @@ await test('game: habits are full-width rows, open first and done below, never m
   await page.waitForFunction(() => [...document.querySelectorAll('#s-today .gchip-name')].map((e) => e.textContent).join(',') === 'Review mistakes,Qbank', null, { timeout: 3000 });
   await page.locator('.undo').getByRole('button', { name: 'Undo' }).click();
   await page.waitForFunction(() => [...document.querySelectorAll('#s-today .gchip-name')].map((e) => e.textContent).join(',') === 'Qbank,Review mistakes', null, { timeout: 3000 });
+});
+
+await test('Setup: one part at a time; deep links open the right part; the Lab stays hidden until asked for', async (page) => {
+  await startGame(page);
+  await page.getByRole('link', { name: 'Setup' }).click();
+  assert(await page.getByRole('region', { name: 'Habits' }).isVisible(), 'Habits not the first part');
+  assert(!(await page.getByRole('region', { name: 'Backup' }).count()), 'every part shown at once');
+  await page.evaluate(() => (location.hash = '#setup-backup'));
+  await page.getByRole('region', { name: 'Backup' }).waitFor();
+  assert((await page.getByRole('button', { name: 'Data', exact: true }).getAttribute('aria-pressed')) === 'true', 'deep link did not select Data');
+  await page.getByRole('button', { name: 'About', exact: true }).click();
+  assert(!(await page.getByRole('link', { name: 'Open the Environment Lab' }).count()), 'Lab visible before unlock');
+  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: /^Ascent / }).click();
+  await page.getByRole('link', { name: 'Open the Environment Lab' }).waitFor();
+});
+
+await test('water close-up: count, the time of each glass, remove with Undo', async (page) => {
+  await startGame(page);
+  await page.locator('.flask-btn').tap();
+  await page.locator('.flask-btn').tap();
+  await hold(page, page.locator('.flask-btn'), 850);
+  const sheet = page.getByRole('dialog', { name: 'Water' });
+  await sheet.waitFor();
+  assert((await sheet.locator('.flask-big').textContent()).includes('2 of 8'), 'count missing');
+  const times = await sheet.locator('.flask-times').textContent();
+  assert(/Glasses at .*\d.*·.*\d/.test(times), `times missing: ${times}`);
+  assert(!/ml/.test(await sheet.textContent()), 'ml shown with no glass size set');
+  await sheet.getByRole('button', { name: 'Remove a glass' }).click();
+  assert((await sheet.locator('.flask-big').textContent()).includes('1 of 8'), 'remove did not count');
+  await sheet.getByRole('button', { name: 'Undo' }).click();
+  assert((await sheet.locator('.flask-big').textContent()).includes('2 of 8'), 'undo did not restore');
+  await sheet.getByRole('button', { name: 'Close' }).click();
+  assert((await page.locator('.flask-btn .flask-n').textContent()) === '2/8', 'corner count wrong');
 });
 
 await test('game: closing the day plays the reward and says so (with the world)', async (page) => {

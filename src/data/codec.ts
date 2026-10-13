@@ -6,9 +6,36 @@
  * as arrays, which replace wholesale: [value | null, skip | null, writeTime].
  * The device is implied by the document the entry lives in.
  */
-import type { Entry, SkipReason } from '../core/model/types';
+import type { Act, Entry, SkipReason } from '../core/model/types';
 
 export type EncodedEntry = [number | null, SkipReason | null, number];
+
+/**
+ * Action times live beside the entries, under `acts` in the same month document, so a reader
+ * that predates them (or a rollback) sees exactly the entries it always did.
+ */
+export type EncodedActs = Array<[number | null, SkipReason | null, number]>;
+
+export function encodeActs(a: Act[]): EncodedActs {
+  return a.map((x) => [x.v ?? null, x.skip ?? null, x.at]);
+}
+
+export function decodeActs(x: unknown): Act[] | null {
+  if (!Array.isArray(x)) return null;
+  const out: Act[] = [];
+  for (const it of x) {
+    if (!Array.isArray(it) || it.length !== 3) return null;
+    const [v, skip, at] = it as unknown[];
+    if (typeof at !== 'number') return null;
+    const a: Act = { at };
+    if (typeof v === 'number') a.v = v;
+    else if (v !== null) return null;
+    if (skip === true || typeof skip === 'string') a.skip = skip as SkipReason;
+    else if (skip !== null) return null;
+    out.push(a);
+  }
+  return out;
+}
 
 export function encodeEntry(e: Entry): EncodedEntry {
   return [e.v ?? null, e.skip ?? null, e.at];

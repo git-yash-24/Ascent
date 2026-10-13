@@ -204,6 +204,28 @@ disappear, full-width habit rows with completed ones at the bottom. Audit first:
   reduced motion) and keyboard focus stays on its row.
 - **G-37 The return beat needs a return**: a first visit on a device does not play it.
 
+## Living World plan, Phase 2 (13 Oct)
+
+Decisions Xander made on the plan's questions (§9): weather stays the weekly canon, real
+weather only as ambience; flask tap = +1 and hold = close-up; replays honest, with action times
+recorded from now on; phone shake opt-in and off. Device target: not chosen yet.
+
+- **G-38 Action times are recorded.** Every change to a habit-day appends {when recorded, what it
+  became} to the entry (last 24), stored beside the entries under `acts` in the same month
+  document. A reader that predates it, or a rollback to v10, sees exactly the same entries.
+  Unreadable times are dropped, never the entry. They travel in backups. They are record times:
+  a backfill is recorded when it is entered, and older days have none.
+- **G-39 The flask is a prop in the world.** Tap it on Ari's hip to add a glass; hold it (or the
+  corner ring) for the close-up: she holds it up, the tin shows a fill line, the sheet shows the
+  count and the time of each glass the record has ("2 earlier, time not recorded" otherwise),
+  Remove a glass with Undo, Add a glass. No ml: no glass size is stored. The corner ring is the
+  fallback everywhere. The registry (`Stage.pick`) has the flask only for now.
+- **G-40 Setup shows one part at a time**: Habits (habits, water), You & day (mark, identity, day
+  end, sound, motion), Data (correct, backup, sync), About. Deep links open the right part.
+- **G-41 Environment Lab** behind five taps on the version in About (or `?lab`): a 24-hour dial,
+  presets (dawn, golden, dusk, blue, night, noon), a weather preview, the frame time, Back to
+  live. Preview only: nothing is written, and the record's weather comes back on close.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).

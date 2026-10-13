@@ -12,7 +12,7 @@ import { load } from '../../core/model/migrations';
 import { parse } from '../../core/model/schemas';
 import { emptySnapshot } from '../../core/model/snapshot';
 import type { DateKey, Entry, HabitId, MonthLog, Snapshot } from '../../core/model/types';
-import { decodeEntry } from '../codec';
+import { decodeActs, decodeEntry } from '../codec';
 import type { RemoteDocs } from '../backend';
 
 export const CONFLICT_WINDOW_MS = 60_000;
@@ -131,6 +131,8 @@ function decodeDeviceLog(
     return null;
   }
   const out: Record<DateKey, Record<HabitId, Entry>> = {};
+  const actsByDay = (body as { acts?: unknown }).acts;
+  const actsOf = (date: string, habit: string): unknown => (typeof actsByDay === 'object' && actsByDay !== null ? (actsByDay as Record<string, Record<string, unknown> | undefined>)[date]?.[habit] : undefined);
   for (const [date, entries] of Object.entries(days as Record<string, unknown>)) {
     if (typeof entries !== 'object' || entries === null) {
       report(`unreadable day ${date}`);
@@ -139,6 +141,10 @@ function decodeDeviceLog(
     const day: Record<HabitId, Entry> = {};
     for (const [habit, raw] of Object.entries(entries as Record<string, unknown>)) {
       const e = decodeEntry(raw, dev);
+      // Action times are extra: unreadable ones are dropped, the entry still counts.
+      const acts = e ? decodeActs(actsOf(date, habit)) : null;
+      if (e && acts?.length) e.acts = acts;
+      if (e?.acts && !parse.entry(e).ok) delete e.acts;
       // Each entry is validated on its own: one bad entry never costs the rest of the month.
       if (!e || !parse.entry(e).ok) {
         report(`invalid entry ${date} ${habit}`);

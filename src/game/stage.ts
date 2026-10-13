@@ -103,11 +103,18 @@ export class Stage {
   private frameShift = FRAME_SHIFT;
   private cupHome: THREE.Vector3 | null = null;
   private offerFrom: THREE.Vector3 | null = null;
+  /** The flask close-up: she holds it up for you to look at. */
+  private inspecting = false;
   /** Called once the reveal has played to its end (true) or was cut short (false). */
   private revealDone: ((shown: boolean) => void) | null = null;
   private steamT = -1;
   private intro: { start: number; done: () => void; seg: number; cues: Set<string> } | null = null;
   private hourOverride: number | null = null;
+  /** Environment Lab: a preview weather that wins over the record's, until cleared. */
+  private weatherOverride: Weather | null = null;
+  private recordWeather: Weather = 'calm';
+  /** Frame time, smoothed (ms), for the Lab's readout. */
+  frameMs = 16;
   private skyTimer = 99;
   private hemiBase = 1.35;
   private teaByClose = false;
@@ -377,6 +384,33 @@ export class Stage {
     return p;
   }
 
+  /**
+   * What is under a touch, among the things in the world you can act on (the prop registry):
+   * today only the flask. Null when nothing is, or when a scene is playing.
+   */
+  pick(clientX: number, clientY: number): 'flask' | null {
+    if (this.montage || this.intro || this.view > 1.5) return null;
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -(((clientY - r.top) / r.height) * 2 - 1));
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, this.camera);
+    const hit = this.flask.getObjectByName('hit');
+    return hit && ray.intersectObject(hit, false).length ? 'flask' : null;
+  }
+
+  /** Water level shown on the flask's fill line, 0 to 1. */
+  setFlaskLevel(u: number): void {
+    (this.flask.userData.setLevel as ((u: number) => void) | undefined)?.(u);
+  }
+
+  /** Hold the flask up for a close look (the inspector), or put it back. */
+  inspectFlask(on: boolean): void {
+    if (on === this.inspecting) return;
+    this.inspecting = on;
+    if (on && !this.acts.some((a) => a.kind === 'drink')) this.inHand();
+    if (!on && !this.acts.some((a) => a.kind === 'drink')) this.holster();
+  }
+
   /** Her own small routine between your visits: never during anything else, on a cooldown. */
   private ambient(): void {
     if (this.reduced || this.intro || this.montage || this.phase !== 'sit' || this.view > 1.5 || this.acts.length) return;
@@ -395,7 +429,25 @@ export class Stage {
     this.steamT = 0;
   }
 
+  /** Environment Lab: preview the light at any hour (null: your clock again). Writes nothing. */
+  previewHour(h: number | null): void {
+    this.hourOverride = h;
+    this.skyTimer = 99;
+  }
+
+  /** Environment Lab: preview a weather (null: the record's again). Writes nothing. */
+  previewWeather(w: Weather | null): void {
+    this.weatherOverride = w;
+    this.setWeather(this.recordWeather);
+  }
+
+  get previewing(): { hour: number | null; weather: Weather | null } {
+    return { hour: this.hourOverride, weather: this.weatherOverride };
+  }
+
   setWeather(w: Weather): void {
+    this.recordWeather = w;
+    if (this.weatherOverride) w = this.weatherOverride;
     this.weather = w;
   }
 
@@ -873,6 +925,11 @@ export class Stage {
       this.kit.yourCup.rotation.set(0, 0, 0);
     }
 
+    // The close-up: the flask held up in front of her, turned toward you.
+    if (this.inspecting && !drinking) {
+      pose = blendJ(pose, { shoulderR: [-1.15, 0, 0.35], elbowR: [-1.75, 0, 0], head: [0.2, -0.2, 0], neck: [0.05, 0, 0] }, 1);
+    }
+
     // A nod when a habit is done.
     const nodT = this.actT('nod');
     if (nodT >= 0) pose = blendJ(pose, { head: add(pose.j.head, [0.35, 0, 0]) }, Math.sin(clamp01(nodT / 0.8) * Math.PI));
@@ -1149,6 +1206,7 @@ export class Stage {
     this.raf = requestAnimationFrame((t) => this.frame(t));
     // Capped so a long pause does not jump the story; generous enough for slow phones.
     const dt = Math.min(0.1, (nowMs - this.last) / 1000);
+    this.frameMs += ((nowMs - this.last) - this.frameMs) * 0.05;
     this.last = nowMs;
     this.clock += dt;
     if (this.dimmed) return;
@@ -1258,6 +1316,12 @@ export class Stage {
       this.climber.joints.head.getWorldPosition(head);
       const shot = { pos: seat.clone().add(v(0.25, 0.9, 0.55)), look: head.clone().add(v(0, -0.35, 0)) };
       want = { pos: want.pos.clone().lerp(shot.pos, w), look: want.look.clone().lerp(shot.look, w) };
+    }
+    if (this.inspecting && !m && this.view < 1.5) {
+      const at = this.flask.getWorldPosition(new THREE.Vector3());
+      const yaw = this.climber.root.rotation.y;
+      // Pulled back enough to see her hand and the tin; the sheet takes the lower part.
+      want = { pos: at.clone().add(v(0.55, 0.3, 1.35).applyAxisAngle(UP, yaw)), look: at.clone().add(v(0, -0.22, 0)) };
     }
     if (m?.cut || (intro && this.intro?.seg === 0)) {
       this.camPos.copy(want.pos);

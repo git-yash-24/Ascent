@@ -14,6 +14,7 @@ import { HabitForm } from './habitForm';
 import { tagOf } from '../../core/tags';
 import { EXPEDITION_NAME_MAX } from '../../core/model/schemas';
 import { markPicker } from '../../game/onboard';
+import { labUnlocked, openLab } from '../lab';
 
 export interface Saver {
   /** Offer a file to the viewer. Resolves false when declined or unavailable. */
@@ -62,12 +63,49 @@ export class SetupView {
     if (r.ok) this.render(this.app.view());
   }
 
+  /** One part of Setup at a time (Living World plan F): habits, you and your day, data, about. */
+  private part: Part = 'habits';
+
   render(v: View, section?: string): void {
     const focusId = (document.activeElement as HTMLElement | null)?.id;
+    if (section) this.part = PART_OF[section] ?? this.part;
     clear(this.body);
-    this.body.append(this.habits(v), this.water(v), this.expedition(v), this.settings(v), this.correct(v), this.backup(v), this.sync(v));
+    const tabs = h('div', { class: 'pills setup-parts', role: 'group', 'aria-label': 'Setup sections' });
+    for (const [id, label] of PARTS) {
+      const b = h('button', { class: 'pill', type: 'button', 'aria-pressed': String(this.part === id) }, label);
+      b.addEventListener('click', () => {
+        this.part = id;
+        this.render(this.app.view());
+        (this.body.querySelector('.setup-parts [aria-pressed="true"]') as HTMLElement | null)?.focus();
+      });
+      tabs.append(b);
+    }
+    const parts: Record<Part, () => HTMLElement[]> = {
+      habits: () => [this.habits(v), this.water(v)],
+      you: () => [this.expedition(v), this.settings(v)],
+      data: () => [this.correct(v), this.backup(v), this.sync(v)],
+      about: () => [this.about()],
+    };
+    this.body.append(tabs, ...parts[this.part]());
     if (section) document.getElementById(section)?.scrollIntoView({ block: 'start' });
     if (focusId) document.getElementById(focusId)?.focus();
+  }
+
+  /** The version, and, once asked for, the Environment Lab (a preview tool; it never writes). */
+  private about(): HTMLElement {
+    const ver = h('button', { class: 'linklike', type: 'button', text: `Ascent ${this.appVersion}` });
+    let taps = 0;
+    ver.addEventListener('click', () => {
+      if (++taps >= 5) {
+        labUnlocked(true);
+        this.say('Environment Lab unlocked on this device.');
+        this.render(this.app.view());
+      }
+    });
+    const lab = labUnlocked()
+      ? h('div', { class: 'field' }, h('a', { class: 'btn', href: '#today', onclick: () => openLab() }, 'Open the Environment Lab'), h('p', { class: 'hint', text: 'Previews light, time and weather over the camp. It never changes your record, the story or the climb.' }))
+      : null;
+    return section('setup-about', 'About', null, h('p', {}, ver), h('p', { class: 'hint', text: 'Your record lives on your account and on this device. Backups are in Data.' }), lab);
   }
 
   // Habits ---------------------------------------------------------------------------------
@@ -423,6 +461,24 @@ function entryText(e: { v?: number; skip?: SkipReason } | null): string {
   if (e.skip !== undefined) return skipLabel(e.skip).toLowerCase();
   return e.v === undefined ? 'nothing' : String(e.v);
 }
+
+type Part = 'habits' | 'you' | 'data' | 'about';
+const PARTS: Array<[Part, string]> = [
+  ['habits', 'Habits'],
+  ['you', 'You & day'],
+  ['data', 'Data'],
+  ['about', 'About'],
+];
+const PART_OF: Record<string, Part> = {
+  'setup-habits': 'habits',
+  'setup-water': 'habits',
+  'setup-expedition': 'you',
+  'setup-settings': 'you',
+  'setup-correct': 'data',
+  'setup-backup': 'data',
+  'setup-sync': 'data',
+  'setup-about': 'about',
+};
 
 function section(id: string, title: string, intro: string | null, ...children: Array<HTMLElement | null>): HTMLElement {
   return h('section', { class: 'card', id, 'aria-labelledby': `${id}-h` }, h('h2', { id: `${id}-h`, text: title }), intro ? h('p', { class: 'intro', text: intro }) : null, ...children);

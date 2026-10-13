@@ -82,6 +82,18 @@ export interface Entry {
   at: number;
   /** Device id. */
   dev: string;
+  /**
+   * Each change to this habit-day, oldest first: when it was recorded and what it became.
+   * Recorded from 13 Oct 2026 on; older entries have none. A record time, not proof of when
+   * the thing itself was done (a backfill is recorded when it is entered).
+   */
+  acts?: Act[];
+}
+
+export interface Act {
+  at: number;
+  v?: number;
+  skip?: SkipReason;
 }
 
 export interface MonthLog {

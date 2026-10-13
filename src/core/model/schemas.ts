@@ -80,12 +80,19 @@ const habit = z
     message: 'first version must start on createdOn',
   });
 
+const skipSchema = z.union([z.literal(true), z.enum(['rest', 'sick', 'travel', 'exam', 'night'])]);
+export const ACTS_MAX = 24;
+const actSchema = z
+  .object({ at: z.number().int().nonnegative(), v: z.number().finite().min(0).max(MAX_VALUE).optional(), skip: skipSchema.optional() })
+  .strict();
+
 export const entrySchema = z
   .object({
     v: z.number().finite().min(0).max(MAX_VALUE).optional(),
-    skip: z.union([z.literal(true), z.enum(['rest', 'sick', 'travel', 'exam', 'night'])]).optional(),
+    skip: skipSchema.optional(),
     at: z.number().int().nonnegative(),
     dev: id,
+    acts: z.array(actSchema).max(ACTS_MAX).optional(),
   })
   .strict()
   .refine((e) => !(e.v !== undefined && e.skip !== undefined), { message: 'value and skip together' });

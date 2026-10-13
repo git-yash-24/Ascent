@@ -10,10 +10,11 @@
  * screen: tap it and Ari drinks, wherever he is.
  * (Xander, 2026-10-13.)
  */
-import type { Accent, DateKey, TrailSymbol } from '../core/model/types';
+import type { Accent, DateKey, Entry, TrailSymbol } from '../core/model/types';
 import { campState, momentumStep, waterDue, weatherOf } from '../core/world';
 import { ACCENTS } from './kit';
 import { markPicker } from './onboard';
+import { labPanel } from './lab';
 import { onMotionChange, reducedMotion, scrollBehavior, setMotionSetting } from '../ui/motion';
 import type { Controller, View } from '../ui/controller';
 import { h } from '../ui/dom';
@@ -154,6 +155,8 @@ export class GameView {
       this.idleTimer = window.setTimeout(() => this.rest(), 4500);
     };
     for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focusin']) window.addEventListener(ev, wake, { passive: true, capture: true });
+    // The Environment Lab (Setup → About, once unlocked).
+    window.addEventListener('ascent:lab', () => this.showLab());
     wake();
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
@@ -389,12 +392,21 @@ export class GameView {
     this.renderFlask(v);
   }
 
+  private lab: HTMLElement | null = null;
+
+  private showLab(): void {
+    if (!this.stage || this.lab) return;
+    this.lab = labPanel(this.stage, () => (this.lab = null));
+    this.root.append(this.lab);
+    (this.lab.querySelector('input') as HTMLElement | null)?.focus();
+  }
+
   /**
    * Hide the HUD, unless something needs it: a sheet or dialog, typing, keyboard focus moving
    * through the controls, the opening, a replay, the detail being up.
    */
   private rest(): void {
-    if (!this.root.isConnected || this.onboarding || this.playing || this.root.dataset.lifted === 'true') return;
+    if (!this.root.isConnected || this.onboarding || this.playing || this.lab || this.root.dataset.lifted === 'true') return;
     if (document.querySelector('dialog[open]')) return;
     const a = document.activeElement as HTMLElement | null;
     if (a && a !== document.body && (a.matches('input, textarea, select, [contenteditable]') || a.matches(':focus-visible'))) {
@@ -456,6 +468,7 @@ export class GameView {
     const due = waterDue(w, Date.now(), this.app.view().snapshot.profile?.settings.timeZone);
     this.flask.dataset.due = String(due);
     this.flask.style.setProperty('--level', String(Math.min(1, w.today / Math.max(1, w.target))));
+    this.stage?.setFlaskLevel(w.today / Math.max(1, w.target));
     (this.flask.querySelector('.flask-n') as HTMLElement).textContent = `${w.today}/${w.target}`;
     const ring = this.flask.querySelector('.flask-ring') as HTMLElement;
     if (ring.dataset.k !== `${w.today}/${w.target}`) {
@@ -465,29 +478,131 @@ export class GameView {
     this.flask.setAttribute('aria-label', `Drink a glass of water. ${w.today} of ${w.target} today.${due ? ' Time for water.' : ''} Hold for more.`);
   }
 
+  /**
+   * The flask close-up: Ari holds it up; the sheet shows the count, the fill, and the time of each
+   * glass the record has (times are kept from 13 Oct on; earlier glasses are counted without one).
+   * Remove a glass here, with Undo. Tap the flask (in the world or the corner) to add one.
+   */
   private openFlaskMenu(): void {
-    const w = this.app.view().derived.water;
+    const v = this.app.view();
+    const w = v.derived.water;
     if (!w) return;
-    const close = (): void => this.flaskMenu.close();
-    const less = h('button', { class: 'btn', type: 'button', onclick: () => (this.glass(-1), close()) }, 'Remove a glass');
-    less.disabled = w.today === 0;
-    this.flaskMenu.replaceChildren(
-      h('h2', { class: 'opts-title', text: 'Water' }),
-      h('p', { class: 'opts-hint', text: `${w.today} of ${w.target} glasses today${w.streak > 1 ? ` · full ${w.streak} days in a row` : ''}. The goal is in Setup.` }),
-      h('div', { class: 'opts-foot' }, less, h('button', { class: 'btn ghost', type: 'button', onclick: close }, 'Close')),
-    );
+    const id = v.snapshot.habits.habits.find((x) => x.system === 'water')?.id;
+    const status = h('p', { class: 'opts-hint', role: 'status' });
+    const body = h('div', { class: 'flask-sheet' });
+    const draw = (): void => {
+      const now = this.app.view();
+      const ww = now.derived.water;
+      if (!ww || !id) return;
+      const e = entryOfToday(now, id);
+      // Replay the count's history: each glass added takes that action's time; a removal takes
+      // the latest one back. Glasses from before times were kept have none.
+      const times: Array<number | null> = [];
+      (e?.acts ?? []).forEach((a, i) => {
+        const n = a.v ?? 0;
+        if (i === 0) for (let k = 0; k < n - 1; k++) times.push(null);
+        while (times.length > n) times.pop();
+        while (times.length < n) times.push(a.at);
+      });
+      const shown = times.slice(0, ww.today).filter((t): t is number => t !== null);
+      const untimed = Math.max(0, ww.today - shown.length);
+      const fmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+      const cells = h('span', { class: 'flask-cells', 'aria-hidden': 'true' });
+      for (let i = 0; i < ww.target; i++) cells.append(h('span', { class: i < ww.today ? 'fc on' : 'fc' }));
+      const less = h('button', { class: 'btn', type: 'button' }, 'Remove a glass');
+      less.disabled = ww.today === 0;
+      less.addEventListener('click', () => {
+        const prev = this.app.entryFields(this.app.today, id);
+        const r = this.app.addGlass(-1);
+        if (!r.ok) {
+          status.replaceChildren(r.message);
+          return;
+        }
+        const undo = h('button', { class: 'btn small ghost', type: 'button' }, 'Undo');
+        undo.addEventListener('click', () => {
+          const u = this.app.revert(this.app.today, id, prev);
+          status.replaceChildren(u.ok ? 'Glass put back.' : u.message);
+          draw();
+        });
+        status.replaceChildren('One glass removed. ', undo);
+        draw();
+      });
+      const more = h('button', { class: 'btn', type: 'button' }, 'Add a glass');
+      more.addEventListener('click', () => {
+        this.glass(1);
+        status.replaceChildren(`${this.app.view().derived.water?.today ?? 0} of ${ww.target} glasses.`);
+        draw();
+      });
+      const list = shown.length
+        ? h('p', { class: 'flask-times' }, h('span', { class: 'label', text: 'Glasses at ' }), shown.map((t) => fmt.format(t)).join(' · '), untimed ? ` · ${untimed} earlier, time not recorded` : '')
+        : ww.today
+          ? h('p', { class: 'flask-times', text: `${ww.today} today; times are recorded from now on.` })
+          : h('p', { class: 'flask-times', text: 'No glasses yet today.' });
+      const focusWas = (document.activeElement as HTMLElement | null)?.textContent;
+      body.replaceChildren(
+        h('p', { class: 'flask-big' }, h('strong', { text: String(ww.today) }), ` of ${ww.target} glasses`),
+        cells,
+        list,
+        h('p', { class: 'opts-hint', text: `${ww.streak > 1 ? `Full ${ww.streak} days in a row. ` : ''}The goal is in Setup. Water keeps Ari strong; it never moves the story.` }),
+        h('div', { class: 'opts-row' }, less, more),
+      );
+      if (focusWas === 'Remove a glass') (ww.today ? less : more).focus();
+      if (focusWas === 'Add a glass') more.focus();
+    };
+    const close = h('button', { class: 'btn ghost', type: 'button', onclick: () => this.flaskMenu.close() }, 'Close');
+    this.flaskMenu.replaceChildren(h('h2', { class: 'opts-title', text: 'Water today' }), body, status, h('div', { class: 'opts-foot' }, h('span'), close));
+    draw();
+    this.stage?.inspectFlask(true);
     this.flaskMenu.showModal();
-    less.focus();
-    this.flaskMenu.addEventListener('close', () => this.flask.focus(), { once: true });
+    (this.flaskMenu.querySelector('.opts-row .btn:not([disabled])') as HTMLElement | null)?.focus();
+    this.flaskMenu.addEventListener(
+      'close',
+      () => {
+        this.stage?.inspectFlask(false);
+        this.flask.focus();
+      },
+      { once: true },
+    );
   }
 
   // The world's labels and touches ------------------------------------------------------------
 
+  /**
+   * Touches on the world itself. A tap on the flask adds a glass; holding it opens the close-up;
+   * a tap elsewhere is a poke (Ari looks up, the fire sparks). Moving is a swipe, never a tap.
+   */
   private pokeable(el: HTMLElement): void {
-    let down: { x: number; y: number; t: number } | null = null;
-    el.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY, t: performance.now() }));
+    let down: { x: number; y: number; t: number; prop: 'flask' | null } | null = null;
+    let timer = 0;
+    el.addEventListener('pointerdown', (e) => {
+      const prop = this.stage?.pick(e.clientX, e.clientY) ?? null;
+      down = { x: e.clientX, y: e.clientY, t: performance.now(), prop };
+      window.clearTimeout(timer);
+      if (prop === 'flask') {
+        timer = window.setTimeout(() => {
+          if (!down) return;
+          down = null;
+          navigator.vibrate?.(12);
+          this.openFlaskMenu();
+        }, 600);
+      }
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) {
+        down = null;
+        window.clearTimeout(timer);
+      }
+    });
     el.addEventListener('pointerup', (e) => {
-      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8 && performance.now() - down.t < 500) this.stage?.poke(e.clientX, e.clientY);
+      window.clearTimeout(timer);
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 8 && performance.now() - down.t < 500) {
+        if (down.prop === 'flask') this.glass(1);
+        else this.stage?.poke(e.clientX, e.clientY);
+      }
+      down = null;
+    });
+    el.addEventListener('pointercancel', () => {
+      window.clearTimeout(timer);
       down = null;
     });
   }
@@ -754,4 +869,8 @@ function ringSvg(n: number, of: number): SVGSVGElement {
     mk('ring-on', `${(Math.min(n, of) / of) * C} ${C}`, 0);
   }
   return svg;
+}
+
+function entryOfToday(v: View, habit: string): Entry | undefined {
+  return v.snapshot.logs[v.today.slice(0, 7)]?.days[v.today]?.[habit];
 }

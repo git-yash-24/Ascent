@@ -4,9 +4,9 @@
  */
 import { derive } from '../core/derive';
 import { startCursor, tick, type DayCursor } from '../core/model/clock';
-import { addDays, compareDateKeys, weekStart } from '../core/model/date';
+import { addDays, compareDateKeys, monthOf, weekStart } from '../core/model/date';
 import { correctRecord, entryOn, isCleared, isEditable, logEntry } from '../core/model/entries';
-import { CURRENT_SCHEMA } from '../core/model/schemas';
+import { ACTS_MAX, CURRENT_SCHEMA } from '../core/model/schemas';
 import type { DateKey, Derived, Entry, ExpeditionDoc, Habit, HabitId, HabitsDoc, Profile, SkipReason, Snapshot } from '../core/model/types';
 import { chooseSteep } from '../core/habits/weekly';
 import { archiveHabit, createHabit, deleteHabit, editDefinition, renameHabit, restoreHabit, retagHabit, sameChainRules, versionOn, type Definition } from '../core/habits/versions';
@@ -191,6 +191,16 @@ export class Controller {
     return { ...fields, at: this.clock.now(), dev: this.dev };
   }
 
+  /**
+   * The entry with this change added to its history of action times (decision G-38): the
+   * last ACTS_MAX changes, each with when it was recorded and what it became.
+   */
+  private withActs(date: DateKey, habit: HabitId, e: Entry): Entry {
+    const prev = this.store.current.snapshot.logs[monthOf(date)]?.days[date]?.[habit];
+    const act = { at: e.at, ...(e.v !== undefined ? { v: e.v } : {}), ...(e.skip !== undefined ? { skip: e.skip } : {}) };
+    return { ...e, acts: [...(prev?.acts ?? []), act].slice(-ACTS_MAX) };
+  }
+
   setValue(habit: HabitId, value: number): ActionResult {
     return this.write(habit, this.entry({ v: value }));
   }
@@ -233,7 +243,7 @@ export class Controller {
     const e = this.entry(prev ?? {});
     const r = logEntry(this.store.current.snapshot, this.today, date, habit, e);
     if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be undone.' };
-    this.store.putEntry(date, habit, e);
+    this.store.putEntry(date, habit, this.withActs(date, habit, e));
     return { ok: true };
   }
 
@@ -248,7 +258,7 @@ export class Controller {
   private write(habit: HabitId, e: Entry): ActionResult {
     const r = logEntry(this.store.current.snapshot, this.today, this._viewDate, habit, e);
     if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be saved.' };
-    this.store.putEntry(this._viewDate, habit, e);
+    this.store.putEntry(this._viewDate, habit, this.withActs(this._viewDate, habit, e));
     return { ok: true };
   }
 
@@ -257,7 +267,7 @@ export class Controller {
     const e = this.entry(fields ?? {});
     const r = correctRecord(s, this.today, date, habit, e);
     if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be saved.' };
-    this.store.putEntry(date, habit, e);
+    this.store.putEntry(date, habit, this.withActs(date, habit, e));
     this.store.putDoc('corrections', r.snapshot.corrections);
     return { ok: true };
   }
@@ -310,7 +320,7 @@ export class Controller {
     const next = Math.max(0, w.today + delta);
     const r = logEntry(this.store.current.snapshot, this.today, this.today, w.habit, this.entry({ v: next }));
     if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be saved.' };
-    this.store.putEntry(this.today, w.habit, this.entry({ v: next }));
+    this.store.putEntry(this.today, w.habit, this.withActs(this.today, w.habit, this.entry({ v: next })));
     return { ok: true };
   }
 
@@ -395,7 +405,8 @@ export class Controller {
       // Clear every stored entry for the habit, then drop it from the habit list.
       for (const log of Object.values(s.logs)) {
         for (const [date, entries] of Object.entries(log.days)) {
-          if (entries[id] && !isCleared(entries[id])) this.store.putEntry(date, id, this.entry({}));
+          // A deleted habit leaves no history of action times either.
+          if (entries[id] && !isCleared(entries[id])) this.store.putEntry(date, id, { ...this.entry({}), acts: [] });
         }
       }
       this.store.putDoc('habits', next.habits);
