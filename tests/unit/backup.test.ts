@@ -100,8 +100,8 @@ describe('export and import', () => {
     ['not JSON', 'nope', 'not valid JSON'],
     ['another file', '{"hello":1}', 'not an Ascent backup'],
     ['a newer version', '{"format":"ascent-backup","version":9,"docs":{}}', 'newer version'],
-    ['a broken habit', '{"format":"ascent-backup","version":1,"docs":{"habits":{"schema":2,"habits":[{"id":"x"}]}}}', 'habits'],
-    ['an unknown habit in the log', '{"format":"ascent-backup","version":1,"docs":{"habits":{"schema":2,"habits":[]},"logs":{"2026-10":{"schema":1,"days":{"2026-10-05":{"ghost":{"v":1,"at":1,"dev":"d"}}}}}}}', 'not in the backup'],
+    ['a broken habit', '{"format":"ascent-backup","version":1,"docs":{"habits":{"schema":3,"habits":[{"id":"x"}]}}}', 'habits'],
+    ['an unknown habit in the log', '{"format":"ascent-backup","version":1,"docs":{"habits":{"schema":3,"habits":[]},"logs":{"2026-10":{"schema":1,"days":{"2026-10-05":{"ghost":{"v":1,"at":1,"dev":"d"}}}}}}}', 'not in the backup'],
     ['a misplaced date', '{"format":"ascent-backup","version":1,"docs":{"logs":{"2026-10":{"schema":1,"days":{"2026-11-05":{}}}}}}', 'another month'],
   ])('rejects %s, whole', (_label, text, message) => {
     const r = parseBackup(text);

@@ -38,8 +38,8 @@ describe('schemas', () => {
       { ...R(D1), versions: [{ ...R(D1).versions[0], target: 2 }] },
       { ...h, versions: [h.versions[0], h.versions[0]] },
     ];
-    for (const b of bad) expect(parse.habits({ schema: 2, habits: [b] }).ok).toBe(false);
-    expect(parse.habits({ schema: 2, habits: [h, h] }).ok).toBe(false);
+    for (const b of bad) expect(parse.habits({ schema: 3, habits: [b] }).ok).toBe(false);
+    expect(parse.habits({ schema: 3, habits: [h, h] }).ok).toBe(false);
   });
 
   it('rejects a log keyed by an impossible date', () => {
@@ -80,6 +80,7 @@ describe('migrations', () => {
       habits: {},
       seen: {},
       corrections: {},
+      notes: {},
       log: {
         0: (d) => ({ ...d, schema: 1, trail: ['0to1'] }),
         1: (d) => ({ ...d, schema: 2, trail: [...(d.trail as string[]), '1to2'] }),
@@ -93,7 +94,7 @@ describe('migrations', () => {
   });
 
   it('fails loudly on a missing step', () => {
-    expect(() => migrate('log', { schema: 0 }, { profile: {}, habits: {}, seen: {}, corrections: {}, log: {} }, 1)).toThrow();
+    expect(() => migrate('log', { schema: 0 }, { profile: {}, habits: {}, seen: {}, corrections: {}, notes: {}, log: {} }, 1)).toThrow();
   });
 });
 

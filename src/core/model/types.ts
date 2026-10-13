@@ -1,7 +1,7 @@
 /**
  * Stored and derived data contracts (build plan: Data contracts; spec: Data model and history).
  *
- * Only five things are stored: profile, habits, monthly logs, seen, corrections.
+ * Only six things are stored: profile, habits, monthly logs, seen, corrections, notes (the journal).
  * Everything else is derived by pure functions and can be rebuilt at any time.
  */
 import type { DateKey } from './date';
@@ -57,6 +57,8 @@ export interface Habit {
   createdOn: DateKey;
   /** Convenience mirror of the latest archive version's date, if currently archived. */
   archivedFrom?: DateKey;
+  /** The coloured tag: a broad family and a named group inside it (core/tags.ts). */
+  tag?: { family: string; group: string };
   /**
    * A built-in habit every player has. 'water' is tracked on its own bar and streak and feeds
    * Ari's condition, but never counts toward the story day or the weekly climb.
@@ -140,6 +142,14 @@ export interface Snapshot {
   logs: Record<string, MonthLog>;
   seen: SeenDoc;
   corrections: CorrectionsDoc;
+  notes: NotesDoc;
+}
+
+/** The person's journal: at most one short note per day. Stored as `notes` (the word journal is
+ * taken by the sync journal). */
+export interface NotesDoc {
+  schema: number;
+  entries: Record<DateKey, string>;
 }
 
 export type HabitDayState =

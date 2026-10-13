@@ -11,6 +11,7 @@ import type { ActionResult, Controller, View } from '../controller';
 import { clear, h } from '../dom';
 import { habitSummary, longDate, shortDate, SKIP_REASONS, skipLabel } from '../format';
 import { HabitForm } from './habitForm';
+import { tagOf } from '../../core/tags';
 
 export interface Saver {
   /** Offer a file to the viewer. Resolves false when declined or unavailable. */
@@ -37,7 +38,7 @@ export class SetupView {
     this.root = h(
       'main',
       { class: 'setup', id: 'setup' },
-      h('div', { class: 'setup-head' }, h('h1', { text: 'Setup' }), h('a', { class: 'btn ghost', href: '#today', text: 'Back to today' })),
+      h('div', { class: 'setup-head' }, h('h1', { text: 'Setup' }), h('a', { class: 'btn ghost', href: '#home', text: 'Back to today' })),
       this.body,
       this.live,
     );
@@ -77,11 +78,11 @@ export class SetupView {
       const li = h('li', { class: `setup-habit${archived ? ' archived' : ''}` });
       const def = latestDefinition(hb);
       li.append(
-        h('div', { class: 'sh-text' }, h('span', { class: 'name', text: hb.name }), h('span', { class: 'meta', text: `${habitSummary(def)}${hb.archivedFrom ? ` · archived from ${shortDate(hb.archivedFrom)}` : ''}` })),
+        h('div', { class: 'sh-text' }, h('span', { class: 'name' }, tagSwatch(hb), hb.name), h('span', { class: 'meta', text: `${habitSummary(def)}${hb.archivedFrom ? ` · archived from ${shortDate(hb.archivedFrom)}` : ''}` })),
       );
       const actions = h('div', { class: 'row-actions' });
       if (this.editing === hb.id) {
-        const form = new HabitForm(`Edit ${hb.name}`, { name: hb.name, version: def });
+        const form = new HabitForm(`Edit ${hb.name}`, { name: hb.name, version: def, ...(hb.tag ? { tag: hb.tag } : {}) });
         const save = h('button', { class: 'btn primary', text: 'Save changes' });
         const cancel = h('button', { class: 'btn ghost', text: 'Cancel' });
         save.addEventListener('click', () => {
@@ -91,7 +92,8 @@ export class SetupView {
             r.field.focus();
             return;
           }
-          const res = this.app.editHabit(hb.id, r.draft.name, r.draft.definition);
+          let res = this.app.editHabit(hb.id, r.draft.name, r.draft.definition);
+          if (res.ok && (hb.tag?.family !== r.draft.tag.family || hb.tag?.group !== r.draft.tag.group)) res = this.app.retag(hb.id, r.draft.tag);
           this.say(res, 'Saved. Changes to the target or schedule apply from today; past days keep their rules.');
           if (res.ok) {
             this.editing = null;
@@ -128,7 +130,7 @@ export class SetupView {
         r.field.focus();
         return;
       }
-      const res = this.app.addHabit(r.draft.name, r.draft.definition);
+      const res = this.app.addHabit(r.draft.name, r.draft.definition, r.draft.tag);
       this.say(res, `${r.draft.name} added. It starts today.`);
       if (res.ok) this.render(this.app.view());
     });
@@ -395,4 +397,10 @@ function entryText(e: { v?: number; skip?: SkipReason } | null): string {
 
 function section(id: string, title: string, intro: string | null, ...children: Array<HTMLElement | null>): HTMLElement {
   return h('section', { class: 'card', id, 'aria-labelledby': `${id}-h` }, h('h2', { id: `${id}-h`, text: title }), intro ? h('p', { class: 'intro', text: intro }) : null, ...children);
+}
+
+function tagSwatch(hb: Habit): HTMLElement {
+  const d = h('span', { class: 'tag-dot', 'aria-hidden': 'true' });
+  d.style.background = tagOf(hb).family.color;
+  return d;
 }

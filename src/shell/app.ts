@@ -13,6 +13,7 @@ import { h } from '../ui/dom';
 import { TodayView } from '../ui/checklist/today';
 import { SetupView, type Saver } from '../ui/setup/setup';
 import { welcome } from '../ui/welcome';
+import { GameView, screenFromHash } from '../game/game';
 
 declare global {
   interface Window {
@@ -73,17 +74,24 @@ export async function boot(root: HTMLElement): Promise<void> {
   const statusText = h('span', { class: 'status-text' });
   const status = h('span', { class: 'status', role: 'status', 'aria-live': 'polite' }, statusDot, statusText);
   const nav = h('a', { class: 'btn ghost nav', href: '#setup' }, 'Setup');
-  const header = h('header', { class: 'top' }, h('span', { class: 'mark', text: 'Ascent' }), status, nav);
+  const skip = h('a', { class: 'skip-link', href: '#list' }, 'Open the plain checklist');
+  const toGame = h('a', { class: 'btn ghost to-game', href: '#today' }, 'Game');
+  const header = h('header', { class: 'top' }, skip, h('span', { class: 'mark', text: 'Ascent' }), status, toGame, nav);
   const outlet = h('div', { class: 'outlet' });
   root.replaceChildren(header, outlet);
 
   const today = new TodayView(app);
   const setup = new SetupView(app, saver, __APP_VERSION__);
-  let current: 'today' | 'setup' | 'welcome' | null = null;
+  const game = new GameView(app);
+  let current: 'game' | 'today' | 'setup' | 'welcome' | null = null;
 
-  const route = (): 'today' | 'setup' => (location.hash.startsWith('#setup') ? 'setup' : 'today');
+  // The game screen is home; #list is the plain checklist (keyboard, screen reader, no world).
+  const route = (): 'game' | 'today' | 'setup' => (location.hash.startsWith('#setup') ? 'setup' : location.hash === '#list' ? 'today' : 'game');
 
+  // Where Setup returns to: the plain checklist or the game screen last shown.
+  let home = '#today';
   const paint = (v: View, navigated = false): void => {
+    if (location.hash === '#home') history.replaceState(null, '', home);
     const s = v.store.status;
     statusDot.dataset.s = s;
     statusText.textContent = v.store.offline ? 'Offline' : STATUS[s];
@@ -94,13 +102,24 @@ export async function boot(root: HTMLElement): Promise<void> {
         current = 'welcome';
       }
       nav.hidden = true;
+      toGame.hidden = true;
       return;
     }
     nav.hidden = false;
     const want = route();
-    nav.textContent = want === 'setup' ? 'Today' : 'Setup';
-    nav.setAttribute('href', want === 'setup' ? '#today' : '#setup');
-    if (want === 'today') {
+    document.body.dataset.mode = want;
+    nav.textContent = want === 'setup' ? 'Back' : 'Setup';
+    nav.setAttribute('href', want === 'setup' ? '#home' : '#setup');
+    toGame.hidden = want !== 'today';
+    toGame.setAttribute('href', `#${game.screen}`);
+    skip.hidden = want !== 'game';
+    if (want === 'game') {
+      if (current !== 'game' || navigated) {
+        if (current !== 'game') outlet.replaceChildren(game.root);
+        current = 'game';
+        game.mount(screenFromHash(location.hash) ?? game.screen);
+      } else game.render(v);
+    } else if (want === 'today') {
       if (current !== 'today') {
         outlet.replaceChildren(today.root);
         current = 'today';
@@ -116,10 +135,14 @@ export async function boot(root: HTMLElement): Promise<void> {
   };
 
   app.onChange((v) => paint(v));
-  window.addEventListener('hashchange', () => paint(app.view(), true));
+  window.addEventListener('hashchange', (e) => {
+    const old = new URL(e.oldURL).hash;
+    if (old && !old.startsWith('#setup') && old !== '#home') home = old;
+    paint(app.view(), true);
+  });
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && route() === 'setup' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
-      location.hash = '#today';
+      location.hash = '#home';
     }
   });
 

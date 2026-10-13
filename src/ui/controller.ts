@@ -9,7 +9,9 @@ import { correctRecord, entryOn, isCleared, isEditable, logEntry } from '../core
 import { CURRENT_SCHEMA } from '../core/model/schemas';
 import type { DateKey, Derived, Entry, Habit, HabitId, HabitsDoc, Profile, SkipReason, Snapshot } from '../core/model/types';
 import { chooseSteep } from '../core/habits/weekly';
-import { archiveHabit, createHabit, deleteHabit, editDefinition, renameHabit, restoreHabit, sameChainRules, versionOn, type Definition } from '../core/habits/versions';
+import { archiveHabit, createHabit, deleteHabit, editDefinition, renameHabit, restoreHabit, retagHabit, sameChainRules, versionOn, type Definition } from '../core/habits/versions';
+import { suggestTag } from '../core/tags';
+import { NOTE_MAX } from '../core/model/schemas';
 import { backupDue, exportCsv, exportJson, backupFileName, prepareImport, type PreparedImport } from '../data/backup/backup';
 import type { SyncedStore, StoreState } from '../data/store';
 import type { KV } from '../data/sync/journal';
@@ -30,6 +32,7 @@ function withWater(doc: HabitsDoc, today: DateKey): HabitsDoc {
     category: 'care',
     createdOn: today,
     system: 'water',
+    tag: { family: 'health', group: 'hydration' },
     versions: [{ from: today, type: 'numeric', unit: 'glasses', target: 8, minimum: 6, schedule: { kind: 'daily' } }],
   };
   return { ...doc, habits: [...doc.habits, water] };
@@ -197,6 +200,19 @@ export class Controller {
     return cur?.v !== undefined && cur.v > 0 ? this.clearEntry(habit) : this.setValue(habit, 1);
   }
 
+  /**
+   * The game screen's tap: done (the full target) or, when already done, empty again.
+   * Anything in between (attempted, held, skipped) becomes done.
+   */
+  tapDone(habit: HabitId): ActionResult {
+    const h = this.store.current.snapshot.habits.habits.find((x) => x.id === habit);
+    const ver = h ? versionOn(h, this._viewDate) : undefined;
+    if (!ver) return { ok: false, message: 'That habit no longer exists.' };
+    const cur = entryOn(this.store.current.snapshot, this._viewDate, habit);
+    const done = cur?.v !== undefined && cur.v >= ver.target;
+    return done ? this.clearEntry(habit) : this.setValue(habit, ver.target);
+  }
+
   skip(habit: HabitId, reason: SkipReason): ActionResult {
     return this.write(habit, this.entry({ skip: reason }));
   }
@@ -232,7 +248,7 @@ export class Controller {
 
   // Setup -----------------------------------------------------------------------------------
 
-  start(input: { identity: string; habits: Array<{ name: string; definition: Definition }> }): ActionResult {
+  start(input: { identity: string; habits: Array<{ name: string; definition: Definition; tag?: { family: string; group: string } }> }): ActionResult {
     const profile: Profile = {
       schema: CURRENT_SCHEMA.profile,
       identity: input.identity.trim(),
@@ -242,7 +258,7 @@ export class Controller {
     };
     let doc: HabitsDoc = { schema: CURRENT_SCHEMA.habits, habits: [] };
     try {
-      for (const hb of input.habits) doc = createHabit(doc, { id: this.newId(), name: hb.name.trim(), category: STORY_CHOOSES, today: this.today, definition: hb.definition });
+      for (const hb of input.habits) doc = createHabit(doc, { id: this.newId(), name: hb.name.trim(), category: STORY_CHOOSES, today: this.today, definition: hb.definition, tag: hb.tag ?? suggestTag(hb.name) });
       doc = withWater(doc, this.today);
       this.store.putDoc('habits', doc);
       this.store.putDoc('profile', profile);
@@ -283,8 +299,40 @@ export class Controller {
     );
   }
 
-  addHabit(name: string, definition: Definition): ActionResult {
-    return this.saveHabits((doc) => createHabit(doc, { id: this.newId(), name: name.trim(), category: STORY_CHOOSES, today: this.today, definition }));
+  addHabit(name: string, definition: Definition, tag?: { family: string; group: string }): ActionResult {
+    return this.saveHabits((doc) =>
+      createHabit(doc, { id: this.newId(), name: name.trim(), category: STORY_CHOOSES, today: this.today, definition, tag: tag ?? suggestTag(name) }),
+    );
+  }
+
+  /** Move a habit to another coloured group. Applies everywhere, like the name. */
+  retag(id: HabitId, tag: { family: string; group: string }): ActionResult {
+    return this.saveHabits((doc) => retagHabit(doc, id, tag));
+  }
+
+  /** Attempted: some effort, short of the hold point. Amount habits keep the amount given. */
+  attempt(habit: HabitId, amount?: number): ActionResult {
+    const h = this.store.current.snapshot.habits.habits.find((x) => x.id === habit);
+    const ver = h ? versionOn(h, this._viewDate) : undefined;
+    if (!ver) return { ok: false, message: 'That habit no longer exists.' };
+    const binary = ver.type === 'binary' || ver.type === 'avoid';
+    const v = binary ? 0.5 : amount ?? Math.max(0, Math.min(ver.minimum, ver.target) / 2);
+    return this.setValue(habit, v);
+  }
+
+  /** One short journal note per day; an empty note removes the day's entry. */
+  saveNote(date: DateKey, text: string): ActionResult {
+    const clean = text.trim().slice(0, NOTE_MAX);
+    const notes = this.store.current.snapshot.notes;
+    const entries = { ...notes.entries };
+    if (clean) entries[date] = clean;
+    else delete entries[date];
+    try {
+      this.store.putDoc('notes', { ...notes, entries });
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'The note could not be saved.' };
+    }
+    return { ok: true };
   }
 
   editHabit(id: HabitId, name: string, definition: Definition): ActionResult {

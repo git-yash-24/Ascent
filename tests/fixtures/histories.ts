@@ -52,7 +52,7 @@ export const historyArb: fc.Arbitrary<History> = fc
     }),
   )
   .map(({ habits, length, ended, seed }) => {
-    let s: Snapshot = { ...emptySnapshot(), habits: { schema: 2, habits } };
+    let s: Snapshot = { ...emptySnapshot(), habits: { schema: 3, habits } };
     const writes: History['writes'] = [];
     let at = 1;
     for (let d = 0; d < length + 10; d++) {

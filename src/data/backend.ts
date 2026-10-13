@@ -8,7 +8,7 @@
  */
 import type { DateKey, Entry, HabitId } from '../core/model/types';
 
-export type DocKindSingle = 'profile' | 'habits' | 'seen' | 'corrections';
+export type DocKindSingle = 'profile' | 'habits' | 'seen' | 'corrections' | 'notes';
 
 export interface DeviceLog {
   /** 'YYYY-MM'. */

@@ -39,7 +39,7 @@ function store(o: Partial<StoreOptions> & { backend: StoreOptions['backend'] }, 
 }
 
 async function withHabitsDoc(s: SyncedStore): Promise<void> {
-  s.putDoc('habits', { schema: 2, habits: [Q(D), R(D)] });
+  s.putDoc('habits', { schema: 3, habits: [Q(D), R(D)] });
   await settle();
 }
 
@@ -211,7 +211,7 @@ describe('open', () => {
 
   it('a corrupt document is rejected and listed, never shown as data', async () => {
     const backend = new MemoryBackend();
-    backend.rawPutSingle('habits', { schema: 2, habits: [{ id: 'x' }] });
+    backend.rawPutSingle('habits', { schema: 3, habits: [{ id: 'x' }] });
     backend.rawPutSingle('seen', { schema: 1, presentedStoryDay: 4, episodes: [1, 2, 3, 4], moments: [], records: [] });
     const s = store({ backend });
     await s.open();
@@ -223,7 +223,7 @@ describe('open', () => {
   it('an invalid document write is refused before it reaches the journal', async () => {
     const s = store({ backend: new MemoryBackend() });
     await s.open();
-    expect(() => s.putDoc('habits', { schema: 2, habits: [{ id: 'x' }] })).toThrow();
+    expect(() => s.putDoc('habits', { schema: 3, habits: [{ id: 'x' }] })).toThrow();
   });
 
   it('works on the artifact database adapter end to end', async () => {

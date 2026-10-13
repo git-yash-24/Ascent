@@ -13,6 +13,16 @@ export interface Sound {
   rustle(): void;
   thud(): void;
   whoosh(): void;
+  /** Water from the flask: three swallows. */
+  gulp(): void;
+  /** The long breath out after drinking. */
+  sigh(): void;
+  /** A page turned or a book opened. */
+  page(): void;
+  /** Pencil on paper, briefly. */
+  scribble(): void;
+  /** A soft bell for each beat of a day's replay. */
+  chime(step: number): void;
 }
 
 export function createSound(): Sound {
@@ -212,6 +222,47 @@ export function createSound(): Sound {
       src.connect(f).connect(g).connect(master);
       src.start(t);
       src.stop(t + 2.3);
+    },
+    gulp() {
+      const t = now();
+      for (let i = 0; i < 3; i++) {
+        const at = t + i * 0.42;
+        burst({ freq: 260 + Math.random() * 60, q: 4, gain: 0.22, decay: 0.16, at });
+        burst({ freq: 900, q: 2, gain: 0.05, decay: 0.08, at: at + 0.05 });
+      }
+    },
+    sigh() {
+      if (!ctx || !master || !noise) return;
+      const t = now();
+      const src = ctx.createBufferSource();
+      src.buffer = noise;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.Q.value = 1.2;
+      f.frequency.setValueAtTime(1300, t);
+      f.frequency.exponentialRampToValueAtTime(500, t + 1.3);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.11, t + 0.15);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+      src.connect(f).connect(g).connect(master);
+      src.start(t);
+      src.stop(t + 1.6);
+      // A cool, open chord under the breath: relief.
+      tone(523.3, t + 0.1, 2.2, 0.035);
+      tone(659.3, t + 0.22, 2.2, 0.03);
+      tone(987.8, t + 0.34, 2.0, 0.018);
+    },
+    page() {
+      burst({ freq: 3200, q: 0.5, gain: 0.07, decay: 0.18 });
+      burst({ freq: 1800, q: 0.7, gain: 0.05, decay: 0.12, at: now() + 0.09 });
+    },
+    scribble() {
+      for (let i = 0; i < 4; i++) burst({ freq: 4200 + Math.random() * 1500, q: 2, gain: 0.025, decay: 0.05, at: now() + i * 0.07 });
+    },
+    chime(step: number) {
+      const scale = [392, 440, 523.3, 587.3, 659.3, 784, 880];
+      tone(scale[step % scale.length] ?? 523.3, now(), 1.2, 0.04);
     },
   };
   window.addEventListener('pagehide', () => window.clearInterval(crackleTimer));

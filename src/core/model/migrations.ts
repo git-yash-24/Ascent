@@ -6,7 +6,7 @@
  * schema n to n + 1, tested against stored samples of every earlier schema.
  */
 import { CURRENT_SCHEMA, parse, type DocKind, type ParseResult } from './schemas';
-import type { CorrectionsDoc, HabitsDoc, MonthLog, Profile, SeenDoc } from './types';
+import type { CorrectionsDoc, HabitsDoc, MonthLog, NotesDoc, Profile, SeenDoc } from './types';
 
 export type Migration = (doc: Record<string, unknown>) => Record<string, unknown>;
 
@@ -39,7 +39,10 @@ export const MIGRATIONS: MigrationTable = {
     0: (d) => ({ ...d, schema: 1, habits: Array.isArray(d.habits) ? d.habits : [] }),
     // Schema 2 adds optional set times on versions and the built-in water habit. Nothing to fill.
     1: (d) => ({ ...d, schema: 2 }),
+    // Schema 3 adds the optional coloured tag. Untagged habits get a suggestion when shown.
+    2: (d) => ({ ...d, schema: 3 }),
   },
+  notes: { 0: (d) => ({ schema: 1, entries: isObject(d.entries) ? d.entries : {} }) },
   log: { 0: (d) => ({ ...d, schema: 1, days: isObject(d.days) ? d.days : {} }) },
   seen: {
     0: (d) => ({
@@ -107,4 +110,5 @@ export interface LoadedDoc {
   log: MonthLog;
   seen: SeenDoc;
   corrections: CorrectionsDoc;
+  notes: NotesDoc;
 }
