@@ -20,7 +20,13 @@ export function groundHeight(x: number, z: number): number {
   h = THREE.MathUtils.lerp(0.02 * fine, h, campBlend);
   const pathBlend = THREE.MathUtils.smoothstep(fromPath, 0.8, 2.6);
   const onPath = slope + (fbm(z * 0.05, 3) - 0.5) * 1.2 * Math.min(1, Math.abs(z) / 10);
-  return THREE.MathUtils.lerp(THREE.MathUtils.lerp(0, onPath, campBlend), h, pathBlend);
+  const out = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0, onPath, campBlend), h, pathBlend);
+  // The valley walls level off into high, rolling shoulders instead of climbing without end:
+  // unchanged below 200 m (everything the camp and the trail see), a soft ceiling above it, so
+  // the year view looks over them rather than into a kilometre-high wall.
+  if (out <= 200) return out;
+  const ceiling = 110 + 90 * fbm(x * 0.004 + 5, z * 0.004 + 9, 2);
+  return 200 + ceiling * (1 - Math.exp(-(out - 200) / ceiling));
 }
 
 const COL = {
@@ -29,6 +35,7 @@ const COL = {
   rock: new THREE.Color('#5a5650'),
   dirt: new THREE.Color('#5b4636'),
   snow: new THREE.Color('#d9dde4'),
+  forest: new THREE.Color('#2c3826'),
 };
 
 function buildTerrain(): THREE.Mesh {
@@ -226,8 +233,13 @@ function buildMidlands(): THREE.Mesh {
     const cy = (fp.getY(i) + fp.getY(i + 1) + fp.getY(i + 2)) / 3;
     const ny = (fn.getY(i) + fn.getY(i + 1) + fn.getY(i + 2)) / 3;
     c.copy(COL.grassLow).lerp(COL.grassDry, fbm(cx * 0.03, cz * 0.03, 2));
-    c.lerp(COL.rock, THREE.MathUtils.clamp((1 - ny) * 2.4 + (cy - 60) / 160, 0, 1));
-    if (cy > 150) c.lerp(COL.snow, Math.min(0.8, (cy - 150) / 50));
+    // Rock on steep faces; height alone only greys it a little, so the high shoulders stay
+    // land (grass, dark forest floor) seen from above, not a pale slab.
+    if (cy > 170) c.lerp(COL.forest, 0.55 * fbm(cx * 0.02 + 7, cz * 0.02 + 3, 2));
+    c.lerp(COL.rock, THREE.MathUtils.clamp((1 - ny) * 2.4 + Math.min(0.3, (cy - 60) / 500), 0, 1));
+    // Snow only on the high shoulders, patchy, so the walls read as land from above.
+    const snowLine = 345 + (fbm(cx * 0.01 + 2, cz * 0.01, 2) - 0.5) * 70;
+    if (cy > snowLine) c.lerp(COL.snow, Math.min(0.6, (cy - snowLine) / 60));
     for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (i + k) * 3);
   }
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));

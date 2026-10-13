@@ -18,6 +18,7 @@ import { buildWorld, dotTexture, glowTexture, groundHeight, pathX, treeWind } fr
 import { coverFor, dayOfYear, skyFor, sunAt, Wind } from './sky';
 import { Clouds } from './clouds';
 import { buildNearForest, type Scenery } from './scenery';
+import { Horizon } from './horizon';
 import { buildCamp } from '../prototype/feel3d/camp';
 import { buildClimber, POSES, lerpPose, walkPose, type Climber, type Joint, type Pose } from '../prototype/feel3d/climber';
 import { RISE, SCRIPT, type Rot } from '../prototype/shared/poses';
@@ -39,7 +40,8 @@ const v = (x: number, y: number, z: number): THREE.Vector3 => new THREE.Vector3(
 const UP = v(0, 1, 0);
 
 const MONTH_SHOT: Shot = { pos: v(110, 170, 300), look: v(-40, 10, -160) };
-const YEAR_SHOT: Shot = { pos: v(430, 980, 330), look: v(-70, 40, -430) };
+// High over the valley's axis, looking up it at the range: walls on both sides fall away below.
+const YEAR_SHOT: Shot = { pos: v(-20, 1180, 560), look: v(-80, 40, -520) };
 /** How far up the closed day's walk takes her: to tomorrow's camp. */
 const WALK_TO = DAY_GAP - 1.6;
 /** The world is framed a little high so the glass checklist sits over the ground. */
@@ -134,6 +136,7 @@ export class Stage {
   readonly wind = new Wind();
   private readonly clouds: Clouds;
   private readonly forest: Scenery;
+  private readonly horizon: Horizon;
   sunElev = 0;
   /**
    * Quality for this device, stepped by measured frame time (target: a mid-range 2026 phone).
@@ -233,6 +236,7 @@ export class Stage {
     this.world = buildWorld(this.scene, { nearForest: 60 });
     this.forest = buildNearForest(60);
     this.scene.add(this.forest.group);
+    this.horizon = new Horizon(this.scene, YEAR_SHOT.pos, YEAR_SHOT.look);
     this.camp = buildCamp(this.scene, coarse ? 512 : 1024);
     this.climber = buildClimber();
     this.scene.add(this.climber.root);
@@ -1218,8 +1222,10 @@ export class Stage {
     const fog = this.scene.fog as THREE.Fog;
     fog.color.copy(look.fog);
     const near = this.view < 1.6;
-    fog.near = storm && near ? 8 : this.weather === 'snow' && near ? 18 : 30;
-    fog.far = storm && near ? 420 : this.weather === 'snow' && near ? 800 : 1300;
+    // Far views see much further: a long, soft haze instead of grey walls (the year view).
+    const farK = clamp01((this.view - 2.2) / 1.2);
+    fog.near = (storm && near ? 8 : this.weather === 'snow' && near ? 18 : 30) + farK * 700;
+    fog.far = (storm && near ? 420 : this.weather === 'snow' && near ? 800 : 1300) + farK * 2600;
     this.hemi.color.copy(look.hemiSky);
     this.hemi.groundColor.copy(look.hemiGround);
     this.hemiBase = look.hemi;
@@ -1238,6 +1244,7 @@ export class Stage {
       key.color.set('#8fa4d8');
       key.intensity = look.moonI * (1 - this.clouds.cover * 0.7);
     }
+    this.horizon.update(this.clock, dt, look, sun.dir, farK);
     // Clouds, wind and the things the wind moves.
     const coverTarget = coverFor(this.weather);
     this.clouds.update(dt, coverTarget, this.weatherOverride || this.hourOverride !== null ? 2.5 : 25, look, sun.dir, this.wind.dir, this.wind.strength);

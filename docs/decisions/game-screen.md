@@ -275,6 +275,24 @@ effect; Phase 3 for "an average middle range phone as of 2026".
   the publish limit (about 1 MB), so bigger models (a character, backpacks) will be published as
   separate files beside the page and loaded at run time, with the code-built ones as fallback.
 
+## The year view without edges (13 Oct)
+
+Asked for: "cover the areas with maybe waterfalls in the distance and clouds so we don't see or
+notice the abrupt ends and the view looks good even when zoomed out".
+
+- **G-50 The world beyond the map** (`src/game/horizon.ts`): a ring of distant snow-capped peaks
+  all round (none close to or behind the year camera, where one would fill the frame as a wall);
+  a deck of cloud around the map's edges, below those peaks, thick in the month and year views
+  and thin at camp, lit from the sun like the sky's clouds; three waterfalls laid on the steepest
+  faces of the main range, water scrolling down, mist at their feet.
+- **G-51 The far views see further**: fog starts later and ends further away as the camera pulls
+  back (about 730 m to 3.9 km in the year view instead of 30 m to 1.3 km), so the land keeps its
+  colour instead of turning to grey.
+- **G-52 The valley walls level off above 200 m** into rolling, snowy shoulders (a soft ceiling
+  of 310 to 400 m) instead of rising without end. Nothing the camp or the trail sees changes
+  (all of it is below 200 m); the year view now looks over the walls rather than into a
+  kilometre-high grey slab, which was the abrupt edge on the right of the year view.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).
