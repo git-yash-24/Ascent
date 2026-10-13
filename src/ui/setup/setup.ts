@@ -105,7 +105,13 @@ export class SetupView {
     const lab = labUnlocked()
       ? h('div', { class: 'field' }, h('a', { class: 'btn', href: '#today', onclick: () => openLab() }, 'Open the Environment Lab'), h('p', { class: 'hint', text: 'Previews light, time and weather over the camp. It never changes your record, the story or the climb.' }))
       : null;
-    return section('setup-about', 'About', null, h('p', {}, ver), h('p', { class: 'hint', text: 'Your record lives on your account and on this device. Backups are in Data.' }), lab);
+    const credits = h(
+      'div',
+      { class: 'field' },
+      h('span', { class: 'label', text: 'Credits' }),
+      h('p', { class: 'hint', text: 'Pines and bushes near camp: Quaternius, Ultimate Nature Pack (CC0, public domain).' }),
+    );
+    return section('setup-about', 'About', null, h('p', {}, ver), h('p', { class: 'hint', text: 'Your record lives on your account and on this device. Backups are in Data.' }), credits, lab);
   }
 
   // Habits ---------------------------------------------------------------------------------

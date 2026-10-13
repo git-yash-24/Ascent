@@ -68,7 +68,8 @@ function buildTerrain(): THREE.Mesh {
   return mesh;
 }
 
-function buildTrees(): THREE.Group {
+/** `clear`: no cone trees within this radius of camp (a modelled forest stands there instead). */
+function buildTrees(clear = 11): THREE.Group {
   const g = new THREE.Group();
   const trunkGeo = new THREE.CylinderGeometry(0.08, 0.12, 1, 5);
   trunkGeo.translate(0, 0.5, 0);
@@ -80,23 +81,7 @@ function buildTrees(): THREE.Group {
   const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: '#3b2c22', flatShading: true }), count);
   const crownMat = new THREE.MeshLambertMaterial({ color: '#28372c', flatShading: true });
   // Crowns sway in the shared wind: bent in world space by height, each tree on its own phase.
-  crownMat.onBeforeCompile = (shader) => {
-    shader.uniforms.uWind = treeWind.wind;
-    shader.uniforms.uTime = treeWind.time;
-    shader.vertexShader = shader.vertexShader
-      .replace('void main() {', 'uniform vec2 uWind; uniform float uTime;\nvoid main() {')
-      .replace(
-        '#include <project_vertex>',
-        THREE.ShaderChunk.project_vertex.replace(
-          'mvPosition = modelViewMatrix * mvPosition;',
-          `vec4 wp = modelMatrix * mvPosition;
-          float hgt = max(0.0, transformed.y - 1.0);
-          float ph = wp.x * 0.13 + wp.z * 0.11;
-          wp.xz += uWind * hgt * hgt * 0.035 * (0.65 + 0.35 * sin(uTime * 1.9 + ph));
-          mvPosition = viewMatrix * wp;`,
-        ),
-      );
-  };
+  swayInWind(crownMat, 1.0, 0.035);
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, count);
   const crowns2 = new THREE.InstancedMesh(crown2, crownMat, count);
   const rnd = mulberry32(21);
@@ -110,7 +95,7 @@ function buildTrees(): THREE.Group {
     const x = (rnd() - 0.5) * 300;
     const z = -170 + rnd() * 320;
     if (Math.abs(x - pathX(z)) < 4.5) continue;
-    if (Math.hypot(x, z) < 11) continue;
+    if (Math.hypot(x, z) < clear) continue;
     if (fbm(x * 0.02 + 40, z * 0.02, 2) < 0.48) continue; // clusters, not a carpet
     const scale = 0.8 + rnd() * 1.1;
     p.set(x, groundHeight(x, z) - 0.1, z);
@@ -351,6 +336,31 @@ function buildSky(): THREE.Group {
 /** Shared by every tree crown: the wind (x, z, world units) and the time. */
 export const treeWind = { wind: { value: new THREE.Vector2(0, 0) }, time: { value: 0 } };
 
+/**
+ * Bend a material's vertices with the shared wind, in world space, by height above `base`
+ * (in the geometry's own units) squared times `k`; each tree on its own phase.
+ */
+export function swayInWind(mat: THREE.Material, base: number, k: number): void {
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWind = treeWind.wind;
+    shader.uniforms.uTime = treeWind.time;
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'uniform vec2 uWind; uniform float uTime;\nvoid main() {')
+      .replace(
+        '#include <project_vertex>',
+        THREE.ShaderChunk.project_vertex.replace(
+          'mvPosition = modelViewMatrix * mvPosition;',
+          `vec4 wp = modelMatrix * mvPosition;
+          float hgt = max(0.0, transformed.y - ${base.toFixed(3)});
+          float ph = wp.x * 0.13 + wp.z * 0.11;
+          wp.xz += uWind * hgt * hgt * ${k.toFixed(4)} * (0.65 + 0.35 * sin(uTime * 1.9 + ph));
+          mvPosition = viewMatrix * wp;`,
+        ),
+      );
+  };
+  mat.customProgramCacheKey = () => `sway-${base}-${k}`;
+}
+
 export interface World {
   group: THREE.Group;
   /** The sky shader's sun and moon. */
@@ -362,14 +372,14 @@ export interface World {
   update(t: number): void;
 }
 
-export function buildWorld(scene: THREE.Scene): World {
+export function buildWorld(scene: THREE.Scene, opts: { nearForest?: number } = {}): World {
   const group = new THREE.Group();
   const skyGroup = buildSky();
   group.add(skyGroup);
   const skyMat = (skyGroup.children[0] as THREE.Mesh).material as THREE.ShaderMaterial;
   const starMat = (skyGroup.children[1] as THREE.Points).material as THREE.PointsMaterial;
   group.add(buildTerrain());
-  group.add(buildTrees());
+  group.add(buildTrees(opts.nearForest ?? 11));
   group.add(buildRocks());
   const { group: mountains, summit } = buildMountains();
   group.add(mountains);

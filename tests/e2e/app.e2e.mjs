@@ -541,6 +541,26 @@ await test('water close-up: count, the time of each glass, remove with Undo', as
   assert((await page.locator('.flask-btn .flask-n').textContent()) === '2/8', 'corner count wrong');
 });
 
+await test('world: the flask is in view and clear of the controls on Today and Camp (with the world)', async (page) => {
+  await page.goto(`${base}?debug`);
+  await startGame(page);
+  const where = () =>
+    page.evaluate(() => {
+      const s = window.__stage;
+      const v = s.flask.getWorldPosition(s.camera.position.clone());
+      v.project(s.camera);
+      const r = document.querySelector('canvas.world').getBoundingClientRect();
+      const compact = document.querySelector('.panel:not([inert]) .compact')?.getBoundingClientRect();
+      return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, front: v.z < 1, w: innerWidth, h: innerHeight, controls: compact?.top ?? innerHeight };
+    });
+  for (const screen of ['Today', 'Camp']) {
+    await page.getByRole('button', { name: screen, exact: true }).click();
+    await page.waitForTimeout(5000);
+    const p = await where();
+    assert(p.front && p.x > 20 && p.x < p.w - 20 && p.y > 60 && p.y < p.controls - 10, `${screen}: flask at ${Math.round(p.x)},${Math.round(p.y)} (controls from ${Math.round(p.controls)})`);
+  }
+});
+
 await test('game: closing the day plays the reward and says so (with the world)', async (page) => {
   await page.goto(base);
   await startGame(page);

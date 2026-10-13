@@ -17,6 +17,7 @@ import * as THREE from 'three';
 import { buildWorld, dotTexture, glowTexture, groundHeight, pathX, treeWind } from '../prototype/feel3d/world';
 import { coverFor, dayOfYear, skyFor, sunAt, Wind } from './sky';
 import { Clouds } from './clouds';
+import { buildNearForest, type Scenery } from './scenery';
 import { buildCamp } from '../prototype/feel3d/camp';
 import { buildClimber, POSES, lerpPose, walkPose, type Climber, type Joint, type Pose } from '../prototype/feel3d/climber';
 import { RISE, SCRIPT, type Rot } from '../prototype/shared/poses';
@@ -116,6 +117,9 @@ export class Stage {
   private fatigueTarget = 0.2;
   private breathPhase = 0;
   private waterFull = false;
+  private waterDue = false;
+  /** A soft glint on the flask when a glass is due: a cue in the world, not another badge. */
+  private glint: THREE.Sprite | null = null;
   /** Called once the reveal has played to its end (true) or was cut short (false). */
   private revealDone: ((shown: boolean) => void) | null = null;
   private steamT = -1;
@@ -129,6 +133,7 @@ export class Stage {
   /** Phase 3: one wind, one cloud layer, the sun's state for this frame. */
   readonly wind = new Wind();
   private readonly clouds: Clouds;
+  private readonly forest: Scenery;
   sunElev = 0;
   /**
    * Quality for this device, stepped by measured frame time (target: a mid-range 2026 phone).
@@ -224,7 +229,10 @@ export class Stage {
     this.scene.add(rim);
 
     this.sound = createSound();
-    this.world = buildWorld(this.scene);
+    // The forest within 60 m of camp is modelled (CC0 pines and bushes); cones beyond.
+    this.world = buildWorld(this.scene, { nearForest: 60 });
+    this.forest = buildNearForest(60);
+    this.scene.add(this.forest.group);
     this.camp = buildCamp(this.scene, coarse ? 512 : 1024);
     this.climber = buildClimber();
     this.scene.add(this.climber.root);
@@ -453,6 +461,7 @@ export class Stage {
   setWater(w: { today: number; target: number; due: boolean; sinceMin: number | null }): void {
     const left = w.target > 0 ? Math.max(0, 1 - w.today / w.target) : 0;
     const full = w.today >= w.target && w.target > 0;
+    this.waterDue = w.due;
     const long = w.sinceMin === null ? 0 : Math.max(0, Math.min(1, (w.sinceMin - 120) / 240));
     this.fatigueTarget = full ? 0.05 : Math.min(0.75, left * 0.4 + (w.due ? 0.25 : 0) + long * 0.15);
     // Reaching the goal: a long stretch, once.
@@ -665,16 +674,36 @@ export class Stage {
     this.phaseStart = this.clock;
   }
 
-  /** The flask rides on his belt, right side, until he drinks. */
+  /**
+   * The flask lives strapped to the outside of her bag, upright, on the side that faces you:
+   * beside her at camp, on her back on the trail. Always in view, always easy to tap
+   * (Xander, 13 Oct: "part of her bag mostly, or somewhere visible").
+   */
   private holster(): void {
-    this.climber.joints.spine.add(this.flask);
-    this.flask.position.set(-0.2, -0.02, 0.07);
-    this.flask.rotation.set(0.1, 0, 0.25);
+    // On the base camp screen the camera is close on her and the journal, so the flask waits on
+    // the log right beside her, in the frame; everywhere else it is on the bag.
+    const c = this.climber;
+    if (this.phase === 'sit' && this.view < 0.6) {
+      c.root.add(this.flask);
+      this.flask.position.set(0.4, 0.5, 0.18);
+      this.flask.rotation.set(0, -0.5, 0);
+      this.flask.scale.setScalar(1.15);
+      this.flaskAt = 'log';
+      return;
+    }
+    c.satchel.add(this.flask);
+    this.flask.position.set(0.1, 0.0, 0.1);
+    this.flask.rotation.set(0, 0, 0);
+    this.flask.scale.setScalar(1.25);
+    this.flaskAt = 'bag';
   }
+  private flaskAt: 'bag' | 'log' | 'hand' = 'bag';
 
   /** In his right hand, mouth toward the lips when the arm is raised. */
   private inHand(): void {
     this.climber.joints.elbowR.add(this.flask);
+    this.flask.scale.setScalar(1);
+    this.flaskAt = 'hand';
     // With the forearm raised, local +z points back toward his face: the flask's mouth goes
     // there, tilted up, its base high, the way you drink from a flask.
     this.flask.position.set(0, -0.31, 0.02);
@@ -912,8 +941,14 @@ export class Stage {
       const lift = smooth(clamp01(drinkT / (0.7 * k))) * (1 - smooth(clamp01((drinkT - 2.5 * k) / (0.5 * k))));
       const sip = smooth(clamp01((drinkT - 0.8 * k) / (0.35 * k))) * (1 - smooth(clamp01((drinkT - 2.2 * k) / (0.35 * k))));
       const ease2 = smooth(clamp01((drinkT - 2.8 * k) / (0.3 * k))) * (1 - clamp01((drinkT - 3.2 * k) / (0.4 * k)));
-      if (drinkT > 0.35 * k && drinkT < 2.95 * k && this.flask.parent !== c.joints.elbowR) this.inHand();
-      if ((drinkT >= 2.95 * k || drinkT < 0.35 * k) && this.flask.parent === c.joints.elbowR) this.holster();
+      // She reaches to the bag for it, and puts it back there afterwards.
+      if (drinkT > 0.35 * k && drinkT < 3.15 * k && this.flask.parent !== c.joints.elbowR) this.inHand();
+      if ((drinkT >= 3.15 * k || drinkT < 0.35 * k) && this.flask.parent === c.joints.elbowR) this.holster();
+      if (sitting) {
+        const take = smooth(clamp01(drinkT / (0.3 * k))) * (1 - smooth(clamp01((drinkT - 0.38 * k) / (0.3 * k))));
+        const put = smooth(clamp01((drinkT - 2.85 * k) / (0.3 * k))) * (1 - smooth(clamp01((drinkT - 3.2 * k) / (0.35 * k))));
+        pose = blendJ(pose, { spine: [0.5, -0.3, 0], head: [0.3, -0.35, 0], shoulderR: [-0.45, 0, 0.4], elbowR: [-0.25, 0, 0] }, Math.max(take, put));
+      }
       pose = blendJ(pose, { shoulderR: [-1.05 - 0.15 * sip, 0, 0.45], elbowR: [-2.15, 0, 0], shoulderL: [-0.45, 0, -0.15], elbowL: [-0.6, 0, 0] }, lift);
       pose = blendJ(pose, { spine: [sitting ? 0.18 : -0.05, 0, 0], neck: [-0.25, 0, 0], head: [-0.55, 0, 0] }, sip);
       // Relief: the shoulders drop and he straightens.
@@ -1386,6 +1421,19 @@ export class Stage {
     this.breathPhase += dt * ((Math.PI * 2) / (3.8 - this.fatigue * 1.3));
     c.overlay(this.clock, cold, !this.reduced, this.breathPhase, this.fatigue);
     this.kit.update(this.clock, this.wind.strength);
+    // Keep the flask where this screen can see it (not while it is in her hand).
+    if (this.flaskAt !== 'hand' && this.flask.parent !== this.climber.joints.elbowR) {
+      const want = this.phase === 'sit' && this.view < 0.6 ? 'log' : 'bag';
+      if (want !== this.flaskAt) this.holster();
+    }
+    if (!this.glint) {
+      this.glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: '#bfefff', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+      this.glint.scale.setScalar(0.22);
+      this.glint.position.set(0, 0.11, 0.02);
+      this.flask.add(this.glint);
+    }
+    const showGlint = this.waterDue && !this.inspecting && !this.acts.some((a) => a.kind === 'drink') && this.view < 1.5;
+    this.glint.material.opacity = showGlint ? 0.25 + 0.35 * Math.max(0, Math.sin(this.clock * 2.2)) ** 2 : 0;
     this.ambient();
 
     // Light, sky, clouds and wind follow your clock, every frame (cheap: a few colours and one light).

@@ -37,7 +37,7 @@ export function buildFlask(): THREE.Group {
   const line = new THREE.Mesh(new THREE.CylinderGeometry(0.057, 0.057, 0.01, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#bfeaff', transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
   line.name = 'level';
   // An invisible, generous touch target, so the flask can be tapped in the world.
-  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
   hit.name = 'hit';
   g.add(body, sleeve, neck, cap, line, hit);
   g.userData.mouth = new THREE.Vector3(0, 0.14, 0);

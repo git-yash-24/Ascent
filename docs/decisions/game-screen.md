@@ -256,6 +256,25 @@ effect; Phase 3 for "an average middle range phone as of 2026".
 - Not yet (by the plan's own order): god rays and rare skies, a real-weather ambience source, and
   any increase in mesh detail (Phase 4).
 
+## The flask in view; modelled scenery (13 Oct)
+
+- **G-47 The flask is always where you can see it**: strapped upright to the outside of her bag,
+  on the side facing the camera (beside her at camp, on her back on the trail); on the base camp
+  close-up it waits on the log at her side, in frame. She reaches to the bag for it and puts it
+  back. A soft glint shows when a glass is due. Touch target enlarged. Tested: on Today and Camp
+  the flask projects inside the screen and above the checklist.
+- **G-48 Third-party models only when licensed and downloadable.** Checked the Sketchfab picks
+  (docs/assets/CREDITS.md): three cannot be used (not downloadable, or no licence); the rest need
+  Xander's Sketchfab login to download, and the two backpacks need heavy simplification
+  (237k and 353k triangles) before they fit a mid-range phone. The workspace cannot reach
+  Sketchfab, so downloads come as attachments.
+- **G-49 A modelled forest near camp**: CC0 low-poly pines (three variants) and bushes from
+  Quaternius' Ultimate Nature Pack within 60 m of camp, recoloured to the mountain's palette and
+  swaying in the shared wind; cones beyond. About 125k triangles in 4 draw calls, no shadow
+  casting. Credited in Setup → About. Stored indexed (85 KB). The single page now sits near
+  the publish limit (about 1 MB), so bigger models (a character, backpacks) will be published as
+  separate files beside the page and loaded at run time, with the code-built ones as fallback.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).
