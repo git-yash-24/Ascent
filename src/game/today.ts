@@ -77,6 +77,11 @@ export class TodaySheet {
     setInterval(() => this.last && this.renderWater(this.last), 60_000);
   }
 
+  /** "1 of 2 done", for the dock's header. */
+  summary(v: View): string {
+    return daySummary(v, this.visible(v));
+  }
+
   render(v: View): void {
     this.last = v;
     this.renderCaption(v);

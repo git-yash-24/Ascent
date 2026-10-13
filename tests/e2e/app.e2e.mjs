@@ -464,6 +464,33 @@ await test('Setup: change the mark and name; watch the opening again', async (pa
   assert((await page.evaluate(() => window.__ascent.app.view().snapshot.expedition.symbol)) === 'star', 'mark lost after the opening');
 });
 
+await test('dock preview: Camp, Today and Journey by buttons; hold still marks done; Setup switches it', async (page) => {
+  await startGame(page);
+  await page.getByRole('link', { name: 'Setup' }).click();
+  await page.getByLabel(/Dock \(preview\)/).check();
+  await page.getByRole('link', { name: 'Back', exact: true }).click();
+  await page.locator('.game.dock').waitFor();
+  assert(await page.locator('.screens').isHidden(), 'tabs still shown in the dock layout');
+  assert((await page.locator('.dock-sum').textContent()) === '0 of 2 done', 'dock header count');
+  await hold(page, chip(page, 'Review mistakes'), 850);
+  assert((await page.locator('.dock-sum').textContent()) === '1 of 2 done', 'dock header did not update');
+  await page.getByRole('button', { name: 'Journey' }).click();
+  await page.waitForFunction(() => location.hash === '#week');
+  await page.getByRole('button', { name: 'Year', exact: true }).click();
+  await page.waitForFunction(() => location.hash === '#year');
+  await page.locator('.dock-top').getByRole('button', { name: 'Back to camp' }).click();
+  await page.waitForFunction(() => location.hash === '#today');
+  await page.getByRole('button', { name: 'Journal' }).click();
+  await page.waitForFunction(() => location.hash === '#camp');
+  await page.locator('.dock-top').getByRole('button', { name: 'Back to camp' }).click();
+  await page.getByRole('button', { name: 'Open today’s list' }).click();
+  await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'true');
+  await page.locator('#s-today').getByRole('button', { name: 'Back to camp' }).click();
+  await page.waitForFunction(() => document.querySelector('.game')?.dataset.lifted === 'false');
+  // Swiping is off: the pager does not scroll by touch.
+  assert((await page.locator('.pager').evaluate((e) => getComputedStyle(e).overflowX)) === 'hidden', 'pager still swipes');
+});
+
 await test('game: closing the day plays the reward and says so (with the world)', async (page) => {
   await page.goto(base);
   await startGame(page);

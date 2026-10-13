@@ -43,7 +43,7 @@ const WALK_TO = DAY_GAP - 1.6;
 const FRAME_SHIFT = 0.07;
 
 type Phase = 'sit' | 'rise' | 'walk' | 'stand';
-type ActKind = 'drink' | 'nod' | 'look' | 'greet' | 'reveal';
+type ActKind = 'drink' | 'nod' | 'look' | 'greet' | 'reveal' | 'offer' | 'warm' | 'tend' | 'route';
 interface Act {
   kind: ActKind;
   start: number;
@@ -99,6 +99,10 @@ export class Stage {
   private momentum = 0;
   private lookCooldown = -99;
   private revealAt: THREE.Vector3 | null = null;
+  private nextAmbient = 30;
+  private frameShift = FRAME_SHIFT;
+  private cupHome: THREE.Vector3 | null = null;
+  private offerFrom: THREE.Vector3 | null = null;
   /** Called once the reveal has played to its end (true) or was cut short (false). */
   private revealDone: ((shown: boolean) => void) | null = null;
   private steamT = -1;
@@ -327,15 +331,61 @@ export class Stage {
     d?.(false);
   }
 
+  /**
+   * The UI covering the world (px from the bottom and from the top): the picture shifts so
+   * Ari, her hands and the fire sit in the open part, not behind the checklist.
+   */
+  setOcclusion(bottom: number, top: number): void {
+    const h = this.canvas.clientHeight || window.innerHeight || 1;
+    // The shots were composed with an 84 px checklist and the caption ending 130 px down;
+    // move the picture by half of whatever differs from that.
+    this.frameShift = Math.max(0, Math.min(0.2, FRAME_SHIFT + (bottom - 84 - (top - 130)) / (2 * h)));
+  }
+
+  /** Far screens keep their own composition. */
+  resetOcclusion(): void {
+    this.frameShift = FRAME_SHIFT;
+  }
+
   /** The motion policy changed (system or Setup): from the next moment on, stills and fades. */
   setReduced(r: boolean): void {
     this.reduced = r;
   }
 
   /** Arrival: she looks up at you and lifts a hand, then goes back to what she was doing. */
-  greet(): void {
+  greet(away = false): void {
     if (this.intro || this.montage) return;
     this.act('greet', 2.6);
+    this.nextAmbient = this.clock + 20;
+    // Back after a while: she slides your cup back within reach, then leaves you to it.
+    if (away && this.phase === 'sit') {
+      const cup = this.kit.yourCup;
+      if (cup.parent === this.kit.group) {
+        // She had kept it by her, near the fire; now it comes back to you.
+        this.cupHome ??= cup.position.clone();
+        cup.position.copy(this.cupBeside());
+        this.act('offer', 5);
+      }
+    }
+  }
+
+  /** Your cup's place while you were away: by her right foot, near the fire. */
+  private cupBeside(): THREE.Vector3 {
+    const c = this.climber;
+    const p = v(0.42, 0, 0.5).applyAxisAngle(UP, c.root.rotation.y).add(c.root.position);
+    p.y = this.cupHome?.y ?? p.y;
+    return p;
+  }
+
+  /** Her own small routine between your visits: never during anything else, on a cooldown. */
+  private ambient(): void {
+    if (this.reduced || this.intro || this.montage || this.phase !== 'sit' || this.view > 1.5 || this.acts.length) return;
+    if (this.clock < this.nextAmbient) return;
+    const pick = (['warm', 'tend', 'route'] as const)[Math.floor(Math.random() * 3)]!;
+    // Warming hands is for cold weather or a low fire; otherwise tend it or check the route.
+    const kind = pick === 'warm' && this.weather === 'clear' && this.camp.fire.level > 0.6 ? 'tend' : pick;
+    this.act(kind, kind === 'warm' ? 5 : kind === 'tend' ? 3.6 : 4);
+    this.nextAmbient = this.clock + 26 + Math.random() * 34;
   }
 
   /** Your cup filled and steaming: the day-close ritual (and the end of the opening). */
@@ -768,6 +818,61 @@ export class Stage {
       });
     }
 
+    // Her own routine: hands to the fire, a log pushed in, a look up the trail.
+    const warmT = this.actT('warm');
+    if (warmT >= 0) {
+      const w = smooth(clamp01(warmT / 0.8)) * (1 - smooth(clamp01((warmT - 4.0) / 0.9)));
+      const rub = Math.sin(warmT * 9) * 0.08 * clamp01((warmT - 1.6) / 0.4) * (1 - clamp01((warmT - 3.2) / 0.3));
+      pose = blendJ(pose, { spine: [0.42, 0, 0], shoulderL: [-1.05, 0, -0.2 + rub], elbowL: [-0.55, 0, 0], shoulderR: [-1.05, 0, 0.2 - rub], elbowR: [-0.55, 0, 0], head: [0.15, 0, 0] }, w);
+    }
+    const tendT = this.actT('tend');
+    if (tendT >= 0) {
+      const w = smooth(clamp01(tendT / 0.7)) * (1 - smooth(clamp01((tendT - 2.7) / 0.8)));
+      const push = Math.sin(clamp01((tendT - 1.0) / 0.9) * Math.PI);
+      pose = blendJ(pose, { spine: [0.7 + push * 0.12, -0.15, 0], head: [0.3, -0.1, 0], shoulderR: [-1.2 - push * 0.25, 0, 0.15], elbowR: [-0.35, 0, 0] }, w);
+      this.cue(tendT, 1.45, () => {
+        this.camp.fire.target = Math.min(1, this.camp.fire.target + 0.05);
+        for (let i = 0; i < 7; i++) this.mote('#ffb066', v((Math.random() - 0.5) * 0.3, 0.35, (Math.random() - 0.5) * 0.3), v((Math.random() - 0.5) * 0.4, 0.9 + Math.random() * 0.6, (Math.random() - 0.5) * 0.4), 1.2, 0.03);
+        this.sound.thud();
+      }, 'tend');
+    }
+    const routeT = this.actT('route');
+    if (routeT >= 0) {
+      const w = smooth(clamp01(routeT / 0.9)) * (1 - smooth(clamp01((routeT - 3.0) / 0.9)));
+      pose = blendJ(pose, { spine: add(pose.j.spine, [-0.08, 0.25, 0]), neck: [-0.1, 0.4, 0], head: [-0.35, 0.55, 0] }, w);
+    }
+    // The return beat: she picks up your cup from beside her, holds it out, and sets it at your place.
+    const offerT = this.actT('offer');
+    if (offerT >= 0 && this.cupHome) {
+      const cup = this.kit.yourCup;
+      const down = smooth(clamp01((offerT - 1.1) / 0.4)) * (1 - smooth(clamp01((offerT - 1.8) / 0.4)));
+      pose = blendJ(pose, { spine: [0.75, 0.2, 0], head: [0.35, 0.1, 0], shoulderR: [-0.6, 0, 0.2], elbowR: [-0.2, 0, 0] }, down);
+      const out = smooth(clamp01((offerT - 1.8) / 0.5)) * (1 - smooth(clamp01((offerT - 3.6) / 0.5)));
+      pose = blendJ(pose, { spine: [0.38, 0, 0], head: [-0.2, 0, 0], shoulderR: [-1.45, 0, 0.1], elbowR: [-0.3, 0, 0] }, out);
+      const hand = this.climber.joints.elbowR;
+      if (offerT >= 1.7 && offerT < 3.7 && cup.parent !== hand) {
+        hand.add(cup);
+        cup.position.set(0, -0.34, 0.03);
+        cup.rotation.set(Math.PI / 2, 0, 0);
+        this.sound.rustle();
+      }
+      if (offerT >= 3.7 && cup.parent === hand) {
+        const at = cup.getWorldPosition(new THREE.Vector3());
+        this.kit.group.add(cup);
+        cup.position.copy(this.kit.group.worldToLocal(at));
+        cup.rotation.set(0, 0, 0);
+        this.offerFrom = cup.position.clone();
+      }
+      if (offerT >= 3.7 && this.offerFrom) cup.position.copy(this.offerFrom.clone().lerp(this.cupHome, ease(clamp01((offerT - 3.7) / 0.6))));
+      if (offerT < 1.7) cup.position.copy(this.cupBeside());
+    }
+    // Cut short (a replay, the opening): the cup is simply back at your place.
+    if (offerT < 0 && !this.intro && this.cupHome && this.kit.yourCup.parent === this.climber.joints.elbowR) {
+      this.kit.group.add(this.kit.yourCup);
+      this.kit.yourCup.position.copy(this.cupHome);
+      this.kit.yourCup.rotation.set(0, 0, 0);
+    }
+
     // A nod when a habit is done.
     const nodT = this.actT('nod');
     if (nodT >= 0) pose = blendJ(pose, { head: add(pose.j.head, [0.35, 0, 0]) }, Math.sin(clamp01(nodT / 0.8) * Math.PI));
@@ -927,9 +1032,9 @@ export class Stage {
 
   private cued = new Set<string>();
   /** Run `fn` once when the act's time crosses `at`. */
-  private cue(t: number, at: number, fn: () => void): void {
-    const a = this.acts.find((x) => x.kind === 'drink');
-    const key = `${a?.start ?? 0}:${at}`;
+  private cue(t: number, at: number, fn: () => void, kind: ActKind = 'drink'): void {
+    const a = this.acts.find((x) => x.kind === kind);
+    const key = `${kind}:${a?.start ?? 0}:${at}`;
     if (t >= at && !this.cued.has(key)) {
       this.cued.add(key);
       if (this.cued.size > 40) this.cued = new Set([key]);
@@ -1059,6 +1164,7 @@ export class Stage {
     const cold = this.weather === 'storm' ? 0.75 : this.weather === 'snow' ? 0.45 : 0.12;
     c.overlay(this.clock, cold, !this.reduced);
     this.kit.update(this.clock);
+    this.ambient();
 
     // The sky follows your clock; checked every second.
     this.skyTimer += dt;
@@ -1143,6 +1249,16 @@ export class Stage {
       const from = at.clone().add(v(1.6, 1.2, 2.2));
       want = { pos: want.pos.clone().lerp(from, w), look: want.look.clone().lerp(at, w) };
     }
+    // The return beat is framed from your place: your cup in front, Ari beyond.
+    const offerT = this.actT('offer');
+    if (offerT >= 0 && !m && this.view < 1.5 && this.cupHome) {
+      const w = smooth(clamp01(offerT / 0.9)) * (1 - smooth(clamp01((offerT - 4.3) / 0.7)));
+      const seat = this.kit.yourSeat;
+      const head = new THREE.Vector3();
+      this.climber.joints.head.getWorldPosition(head);
+      const shot = { pos: seat.clone().add(v(0.25, 0.9, 0.55)), look: head.clone().add(v(0, -0.35, 0)) };
+      want = { pos: want.pos.clone().lerp(shot.pos, w), look: want.look.clone().lerp(shot.look, w) };
+    }
     if (m?.cut || (intro && this.intro?.seg === 0)) {
       this.camPos.copy(want.pos);
       this.camLook.copy(want.look);
@@ -1153,7 +1269,7 @@ export class Stage {
     }
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
-    this.shift += ((this.montage || this.intro || this.debugShot ? 0 : FRAME_SHIFT) - this.shift) * (1 - Math.exp(-dt * 4));
+    this.shift += ((this.montage || this.intro || this.debugShot ? 0 : this.frameShift) - this.shift) * (1 - Math.exp(-dt * 4));
     const w = this.canvas.clientWidth || 1;
     const h = this.canvas.clientHeight || 1;
     this.camera.setViewOffset(w, h, 0, h * this.shift, w, h);

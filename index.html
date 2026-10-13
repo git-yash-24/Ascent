@@ -168,6 +168,8 @@
       .check input { width: 22px; height: 22px; accent-color: var(--ember); }
       .habit-form { border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: grid; gap: 12px; margin: 0; min-width: 0; }
       .habit-form legend { font-weight: 600; padding: 0 6px; }
+      .layout-pick { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+      .layout-pick legend { padding: 0; margin-bottom: 4px; }
       .daybox { display: flex; flex-wrap: wrap; gap: 6px; }
       .day { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 22px; }
       .day input { accent-color: var(--ember); width: 18px; height: 18px; }
@@ -194,8 +196,8 @@
          and the organised detail further down. Glass, not sheets: the world shows through
          everything. Colour: ember means days made, frost means water and rest, each habit wears
          its tag family's colour, nothing else is coloured. */
-      .skip-link { position: absolute; left: 8px; top: -60px; z-index: 30; background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 8px; font-weight: 600; }
-      .skip-link:focus { top: 8px; }
+      .skip-link { position: absolute; left: 8px; top: 8px; transform: translateY(calc(-100% - 20px)); z-index: 30; background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 8px; font-weight: 600; }
+      .skip-link:focus { transform: none; }
       body[data-mode='game'] { overflow: hidden; overscroll-behavior: none; background: #0b0d14; }
       body[data-mode='game'] #app { max-width: none; padding: 0; }
       body[data-mode='game'] .top { position: fixed; inset: 0 0 auto 0; z-index: 8; background: linear-gradient(rgba(6, 8, 14, .5), rgba(6, 8, 14, 0)); border: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 18px; pointer-events: none; transition: opacity .3s; }
@@ -376,6 +378,50 @@
       .game.onboarding .screens, .game.onboarding .pager, .game.onboarding .flask-btn, .game.onboarding .labels { opacity: 0; pointer-events: none; }
       body:has(.game.onboarding) .top { display: none; }
 
+      /* ---------- The dock preview: Camp, Today, Journey ----------
+         No tabs. Home is the camp with one dock at the bottom: a header (Today, the count,
+         Journey, open the list) and the habits stacked as rows on one charcoal surface. The top
+         bar holds the way back and the place you are in. Swiping between places is off: every
+         move is a labelled button. */
+      .dock-top, .dock-head { display: none; }
+      .game.dock .dock-top { position: fixed; z-index: 7; top: calc(10px + env(safe-area-inset-top, 0px)); left: 12px; right: 62px; display: flex; align-items: center; gap: 8px; min-height: 42px; }
+      .game.dock .dock-top[hidden] { display: none; }
+      .dock-spacer { flex: 1; }
+      .dock-back, .dock-journal { display: inline-flex; align-items: center; gap: 4px; min-height: 42px; padding: 0 14px 0 10px; border-radius: 21px; border: 1px solid rgba(255, 255, 255, .2); background: rgba(16, 20, 24, .62); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); color: var(--ink); font-size: 14px; font-weight: 600; }
+      .dock-journal { padding: 0 14px 0 12px; }
+      .ico { width: 20px; height: 20px; flex: none; }
+      .dock-place { font: 600 17px var(--f-body); text-shadow: 0 1px 8px rgba(0, 0, 0, .6); }
+      .dock-seg { display: flex; gap: 2px; padding: 3px; border-radius: 22px; background: rgba(16, 20, 24, .62); border: 1px solid rgba(255, 255, 255, .16); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+      .dock-seg-b { min-height: 36px; padding: 0 12px; border: 0; border-radius: 18px; background: transparent; color: rgba(237, 231, 220, .8); font-size: 13px; font-weight: 600; }
+      .dock-seg-b[aria-pressed='true'] { background: #f0eee7; color: #10131a; }
+      /* The gear moves to the right; the flask sits under it. */
+      body.layout-dock[data-mode='game'] .top .nav { left: auto; right: 12px; }
+      body.layout-dock[data-mode='game'] .top .status:not([data-say='true']) { right: 12px; left: auto; }
+      .game.dock .flask-btn { top: calc(62px + env(safe-area-inset-top, 0px)); }
+      .game.dock .pager { overflow-x: hidden; }
+      /* The dock: one surface, a stable header, rows rather than floating pills. */
+      .game.dock .p-today .compact { width: min(640px, 100%); background: rgba(18, 22, 26, .9); border: 1px solid rgba(255, 255, 255, .1); border-bottom: 0; border-radius: 24px 24px 0 0; padding: 4px 12px calc(12px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -12px 30px rgba(0, 0, 0, .3); }
+      .game.dock .p-today .compact-today { gap: 4px; }
+      .game[data-lifted='true'] .dock-top { opacity: 0; pointer-events: none; }
+      .game.dock .dock-top { transition: opacity .3s; }
+      .game.dock .dock-head { display: flex; align-items: center; gap: 8px; min-height: 48px; }
+      .dock-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+      .dock-t { font: 600 17px var(--f-body); }
+      .dock-sum { font-size: 14px; color: #adb6b8; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .dock-journey { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .05); color: var(--ink); font-size: 14px; font-weight: 600; }
+      .dock-open { width: 44px; height: 40px; border-radius: 20px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, .16); background: rgba(255, 255, 255, .05); color: var(--ink); }
+      .dock-open svg { width: 20px; height: 20px; }
+      .game.dock .chips { grid-template-columns: 1fr; gap: 2px; }
+      .game.dock .gchip { min-height: 54px; border-radius: 14px; background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 6px 10px 6px 12px; }
+      .game.dock .chips li + li { border-top: 1px solid rgba(255, 255, 255, .07); padding-top: 2px; }
+      .game.dock .gchip-text { flex: 1; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+      .game.dock .gchip-name { font-size: 16px; -webkit-line-clamp: 1; }
+      .game.dock .gchip-val { font-size: 13px; color: #adb6b8; font-variant-numeric: tabular-nums; }
+      .game.dock .gchip[data-state='fulfilled'] { background: color-mix(in srgb, var(--fam) 22%, transparent); border-color: transparent; box-shadow: none; }
+      .game.dock .gchip[data-state='fulfilled'] .gchip-name { text-decoration: none; }
+      .game.dock .undo { background: rgba(255, 255, 255, .06); }
+      .game.dock .alerts .alert { background: rgba(255, 255, 255, .05); backdrop-filter: none; -webkit-backdrop-filter: none; }
+
       /* Your mark: symbols and colours as round radio tiles. */
       .mark-pick { display: grid; gap: 10px; }
       .mark-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -388,6 +434,15 @@
       /* On a phone the tabs take the top row and the flask sits just under its corner. */
       @media (max-width: 520px) { .screens { right: 12px; max-width: calc(100% - 74px); } .flask-btn { top: calc(60px + env(safe-area-inset-top, 0px)); } }
       @media (max-width: 370px) { .screen-btn { padding: 0 8px; font-size: 12px; } }
+      @media (max-width: 340px) { .screen-btn { padding: 0 6px; } }
+      /* Large text or a very narrow window: the tabs scroll rather than clip, chips stack. */
+      .screens { overflow-x: auto; scrollbar-width: none; }
+      .screens::-webkit-scrollbar { display: none; }
+      .screen-btn { flex: none; }
+      @media (max-width: 300px) { .chips { grid-template-columns: 1fr; } }
+      .dock-head { flex-wrap: wrap; }
+      .dock-title { flex: 1 1 140px; }
+      .game.dock .gchip-text { flex-wrap: wrap; row-gap: 0; }
 
       .flask { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 14px; border-radius: 22px; }
       .flask[data-due='true'] { border-color: rgba(168, 236, 255, .8); }

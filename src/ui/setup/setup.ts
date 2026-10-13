@@ -14,6 +14,7 @@ import { HabitForm } from './habitForm';
 import { tagOf } from '../../core/tags';
 import { EXPEDITION_NAME_MAX } from '../../core/model/schemas';
 import { markPicker } from '../../game/onboard';
+import { layout, setLayout, type Layout } from '../layout';
 
 export interface Saver {
   /** Offer a file to the viewer. Resolves false when declined or unavailable. */
@@ -231,8 +232,30 @@ export class SetupView {
       soundRow,
       musicRow,
       motionRow,
+      this.layoutPick(),
       h('p', { class: 'hint', text: `Time zone: ${p.settings.timeZone}. Each day keeps the zone it began in.` }),
       h('div', { class: 'row-actions' }, save),
+    );
+  }
+
+  /** The game screen's layout, for this device only: the tabs, or the dock preview. */
+  private layoutPick(): HTMLElement {
+    const now = layout();
+    const opt = (value: Layout, label: string, hint: string): HTMLElement => {
+      const input = h('input', { type: 'radio', name: 'set-layout', value, id: `set-layout-${value}` });
+      input.checked = now === value;
+      input.addEventListener('change', () => {
+        setLayout(value);
+        this.say(value === 'dock' ? 'Dock layout on, on this device.' : 'Tabs layout on, on this device.');
+      });
+      return h('label', { class: 'check', for: `set-layout-${value}` }, input, h('span', {}, h('strong', { text: label }), h('span', { class: 'hint', text: ` ${hint}` })));
+    };
+    return h(
+      'fieldset',
+      { class: 'field layout-pick' },
+      h('legend', { class: 'label', text: 'Game screen layout (this device)' }),
+      opt('tabs', 'Tabs', 'Camp, Today, Week, Month, Year across the top; swipe between them.'),
+      opt('dock', 'Dock (preview)', 'Camp with one dock at the bottom; Journey and Journal as buttons.'),
     );
   }
 

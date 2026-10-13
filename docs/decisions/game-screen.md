@@ -150,6 +150,40 @@ primary button's dark label on ember 6.0:1. `--dim` (3.2:1) is no longer used fo
 Not done here (needs a choice): the Camp / Today / Journey dock-and-sheet model of sections 5 to
 7. The brief asks for it to be prototyped and compared with this repaired model before either ships.
 
+## Dock preview, framing, the return beat (13 Oct, continued)
+
+Asked for: "continue further" on the audit brief, so steps 4 and 5: prototype the dock model
+next to the repaired tabs, a camera that frames around the UI, one complete emotional interaction,
+and independent life; then the test matrix.
+
+| Piece | Where |
+|---|---|
+| Dock preview: Camp (home, one dock), Today (the dock's list, opened), Journey (Week, Month, Year as one control), Journal | `GameView.applyLayout`, `renderDockTop`, `.game.dock` CSS; `src/ui/layout.ts` |
+| Switch per device in Setup ("Game screen layout"), or `?ui=dock` / `?ui=tabs` | `SetupView.layoutPick` |
+| Camera frames Ari in the open part of the screen: the shift follows the checklist's height and the caption | `Stage.setOcclusion`, `GameView.frameAround` |
+| Return beat: after most of a day away (or missed days) she picks up your cup from beside her, holds it out, sets it at your place; framed from your seat | `Stage.greet(away)`, act `offer` |
+| Her own routine: hands to the fire (cold or low fire), a log pushed in, a look up the trail; every 26 to 60 s, never during anything else, off in reduced motion | `Stage.ambient`, acts `warm`, `tend`, `route` |
+
+Calls made:
+
+- **G-30 Both layouts ship side by side for now**; tabs stay the default. The dock is a preview to compare on real data, not a second permanent system: one of the two goes once Xander picks.
+- **G-31 In the dock, hold is still done and a tap still opens the options** (G-26 holds in both layouts).
+- **G-32 No swiping between places in the dock**: every move is a labelled button, so the world under the dock never fights a swipe.
+- **G-33 The return beat does not fill the cup**: the cup fills only when a day closes (G-19); after an absence she gives it back to you.
+
+Test matrix run (world off unless noted; results, not plans):
+
+| Case | Tabs | Dock |
+|---|---|---|
+| 390×844 portrait, world on | Ari framed above the chips | Ari, hands and fire above the dock |
+| 360×640, 320×568 | All controls on screen (tabs tighten at 340 px) | All on screen |
+| 844×390 landscape | Usable; chips low | Usable; dock covers about half the height |
+| 195×422 (390 px at 200% zoom) | Tabs scroll and keep the current one in view; chips stack | Dock header wraps; rows wrap |
+| Reduced motion, keyboard, screen reader names | Covered by e2e (21 + dock test) | Covered by the dock e2e |
+
+Still untested here: a real phone's soft keyboard over the amount field, iOS Safari, and the
+night scene's darkness on an actual screen.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).
