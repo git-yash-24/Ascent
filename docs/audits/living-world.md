@@ -64,3 +64,9 @@ reduced motion, keyboard, ghost click.
 - Water cause and effect (G-42) and Phase 3's base-camp light pipeline (G-43 to G-46). Device target
   set by Xander: an average mid-range 2026 phone; adaptive quality tiers against measured frame time.
   Not measurable here: real-phone frame times (headless software rendering runs at ~3 fps).
+- Phase 3 completed with weather, seasons and light (G-53 to G-60): twelve kinds of weather from
+  the canon and the season, stars and the real moon, golden hour and god rays, an open meadow camp
+  with a low camera, Ari's light, clothes and shelter, shake (opt-in).
+- Phase 4 art pass (G-61 to G-64): Ari rebuilt from turned shapes with a real pack, cloth that
+  moves, a grass-and-flower meadow on the quality tiers, starlight on moonless nights. A rigged,
+  modelled Ari still needs a model file. Next: Phase 5, honest replays.

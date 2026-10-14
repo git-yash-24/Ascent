@@ -450,7 +450,7 @@ function buildStars(): THREE.Points {
 
 /** Shared by every tree crown and by the weather on the ground: the wind, time, snow, wetness, the season's tint. */
 export const treeWind = { wind: { value: new THREE.Vector2(0, 0) }, time: { value: 0 } };
-export const weatherFx = { snow: { value: 0 }, wet: { value: 0 }, tint: { value: new THREE.Color(1, 1, 1) } };
+export const weatherFx = { snow: { value: 0 }, wet: { value: 0 }, tint: { value: new THREE.Color(1, 1, 1) }, grow: { value: 1 } };
 
 export interface Patch {
   /** Bend with the wind: [base height, strength]. */
@@ -461,6 +461,8 @@ export interface Patch {
   tint?: boolean;
   /** A per-vertex `aSnow` attribute masks the snow (the path stays trodden). */
   mask?: boolean;
+  /** Low plants sink under lying snow (their height times the shared `grow`). */
+  grow?: boolean;
 }
 
 /**
@@ -473,6 +475,10 @@ export function patchMaterial(mat: THREE.Material, o: Patch): void {
   mat.onBeforeCompile = (shader) => {
     let vs = shader.vertexShader;
     let fs = shader.fragmentShader;
+    if (o.grow) {
+      shader.uniforms.uGrow = weatherFx.grow;
+      vs = vs.replace('void main() {', 'uniform float uGrow;\nvoid main() {').replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed.y *= uGrow;');
+    }
     if (o.sway) {
       shader.uniforms.uWind = treeWind.wind;
       shader.uniforms.uTime = treeWind.time;

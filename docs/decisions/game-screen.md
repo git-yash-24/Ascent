@@ -344,9 +344,26 @@ time of day, and how she reacts: clothes, shelter, covering her things. The full
   world's materials; stars are hidden by day. The tree models are stored gzipped and unpacked in
   the browser, which keeps the page under the publish limit (about 950 KB).
 
+## Phase 4: the art pass on Ari and the meadow (14 Oct)
+
+- **G-61 Ari, rebuilt from turned shapes**, same joints, poses and proportions: a coat with a
+  chest, a waist, a flared hem, a belt, buckle, placket and toggles; sleeves with cuffs; mitts
+  with thumbs; tapered trousers; walking boots with a rolled sock, a rounded toe and a sole; the
+  hood with a turned-back rim round the face's hollow and its point falling back like a cowl.
+  Still faceless, still Ari. Her scarf tails and rain cape move with the wind and her walk.
+- **G-62 Her bag is now a pack** (the code still calls it the satchel): canvas body, lid, a
+  front pocket carrying your mark, side pockets (the flask rides in one, in view), a bedroll on
+  top and a sleeping mat below, shoulder straps. Same places as before: by her at camp, on her back
+  on the trail.
+- **G-63 The meadow** round camp: about 3,200 instanced grass tufts and 500 wild flowers within
+  30 m, swaying in the shared wind, tinted by the season, sinking under lying snow; flowers full
+  in spring, thinner in summer, gone by autumn. Quality tiers draw 35%, 70% or all of the tufts.
+- **G-64 Nights without a moon keep starlight**: a faint cool light from overhead when the moon is
+  down or thin, so the land and Ari stay readable; her own light still does most of the work.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).
-- Ari's gear visible on the model; story scenes per chore (M11 onward).
+- Story scenes per chore (M11 onward). A rigged, modelled Ari (needs a model file; the code-built one stays the fallback).
 - Month and year landscapes are camera moves over the same world; a proper year map comes with the
   route art.

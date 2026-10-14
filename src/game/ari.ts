@@ -171,7 +171,7 @@ export class Shelter {
       m.castShadow = true;
       return m;
     };
-    const sheet = drape(0.3, 0.36, 0.22);
+    const sheet = drape(0.3, 0.58, 0.26);
     sheet.position.copy(satchelSpot).setY(groundHeight(satchelSpot.x, satchelSpot.z) - 0.01);
     sheet.rotation.y = 0.4;
     const pile = drape(0.62, 0.48, 0.48);
@@ -256,7 +256,7 @@ export class Shelter {
       else if (p.o === this.parts.flap.o) p.o.scale.set(1, e, 1);
       else p.o.scale.multiplyScalar(e);
       // The drapes keep their own proportions.
-      if (p.o === this.parts.sheet.o) p.o.scale.set(0.3 * e, 0.36 * e, 0.22 * e);
+      if (p.o === this.parts.sheet.o) p.o.scale.set(0.3 * e, 0.58 * e, 0.26 * e);
       if (p.o === this.parts.pile.o) p.o.scale.set(0.62 * e, 0.48 * e, 0.48 * e);
     }
   }

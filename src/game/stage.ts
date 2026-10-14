@@ -18,6 +18,7 @@ import { buildWorld, glowTexture, groundHeight, pathX, patchMaterial, treeWind, 
 import { dayOfYear, moonAge, skyFor, sunAt, Wind, LATITUDE } from './sky';
 import { goldenOf, outfitFor, shelterFor, showerPulse, todaysConditions, conditionsFor, kindFor, seasonOf, type Conditions, type Kind, type Season } from './conditions';
 import { Air, Bolt, Puddles, Rain, Shafts } from './weather';
+import { Meadow } from './meadow';
 import { Carry, Shelter, rimU, sunKiss } from './ari';
 import { onWorldPrefs, worldPrefs } from '../ui/worldPrefs';
 import { Clouds } from './clouds';
@@ -49,6 +50,7 @@ const UP = v(0, 1, 0);
 const AZIMUTH = (-30 * Math.PI) / 180;
 const POLE = v(0, Math.sin((LATITUDE * Math.PI) / 180), -Math.cos((LATITUDE * Math.PI) / 180)).applyAxisAngle(UP, AZIMUTH);
 const C = (h: string): THREE.Color => new THREE.Color(h);
+const SKYGLOW = v(0.25, 1, 0.35).normalize();
 /** The ground's tint by season, and the bushes': fresh, sunburnt, rust, bare. */
 const SEASON_TINT: Record<Season, THREE.Color> = { spring: C('#f2ffe0'), summer: C('#fff0c8'), autumn: C('#ffd2a8'), winter: C('#e6e2dc') };
 const BUSH: Record<Season, THREE.Color> = { spring: C('#d6ffb8'), summer: C('#f0f0c0'), autumn: C('#ff9a50'), winter: C('#b8a088') };
@@ -132,6 +134,7 @@ export class Stage {
   private readonly shafts: Shafts;
   private readonly bolt: Bolt;
   private readonly puddles: Puddles;
+  private readonly meadow: Meadow;
   private readonly carry: Carry;
   private readonly shelter: Shelter;
   private outfitKey = '';
@@ -331,6 +334,8 @@ export class Stage {
     this.shafts = new Shafts(this.scene);
     this.bolt = new Bolt(this.scene);
     this.puddles = new Puddles(this.scene);
+    this.meadow = new Meadow(this.scene);
+    this.meadow.setTier(this.tier);
 
     const glow = (color: string, opacity = 0): THREE.Sprite => {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity, fog: false }));
@@ -426,7 +431,7 @@ export class Stage {
     }
     if (symbol) {
       this.patch = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.12), new THREE.MeshLambertMaterial({ map: symbolTexture(symbol, '#efe6d2', accent), transparent: false }));
-      this.patch.position.set(0, -0.02, 0.067);
+      this.patch.position.set(0, 0.03, 0.152);
       this.climber.satchel.add(this.patch);
     }
   }
@@ -831,8 +836,9 @@ export class Stage {
       this.flaskAt = 'log';
       return;
     }
+    // In the pack's side pocket, on the side toward the camera at camp.
     c.satchel.add(this.flask);
-    this.flask.position.set(0.1, 0.0, 0.1);
+    this.flask.position.set(0.21, -0.02, 0.03);
     this.flask.rotation.set(0, 0, 0);
     this.flask.scale.setScalar(1.25);
     this.flaskAt = 'bag';
@@ -856,8 +862,8 @@ export class Stage {
     c.root.position.set(0, this.camp.seat.position.y - 0.17, this.camp.seat.position.z);
     c.root.rotation.set(0, 0, 0);
     this.scene.add(c.satchel);
-    c.satchel.position.copy(this.camp.satchelSpot);
-    c.satchel.rotation.set(0, 0.4, 0.12);
+    c.satchel.position.copy(this.camp.satchelSpot).add(v(0, 0.07, 0));
+    c.satchel.rotation.set(-0.12, 0.4, 0);
     this.pickedUp = false;
     this.kicked = false;
     this.walked = 0;
@@ -868,8 +874,8 @@ export class Stage {
   private shoulder(): void {
     const c = this.climber;
     c.joints.spine.add(c.satchel);
-    c.satchel.position.set(0.02, 0.22, -0.2);
-    c.satchel.rotation.set(0.15, Math.PI, 0.25);
+    c.satchel.position.set(0, 0.2, -0.27);
+    c.satchel.rotation.set(0.1, Math.PI, 0);
     this.pickedUp = true;
   }
 
@@ -1506,7 +1512,10 @@ export class Stage {
     // up, as bright as its phase); both are dim around the switch, so the shadows never jump.
     const sunUp = sun.elev > -4;
     const key = this.lastLight;
-    const dir = sunUp ? sun.dir : sun.moon;
+    // With the moon down the night still has starlight: a faint, cool light from high overhead.
+    const moonLight = look.moonI * (1 - cover * 0.7) * moonUp * (0.25 + 0.75 * sun.moonLit);
+    const starlight = 0.2 * (1 - cover * 0.5);
+    const dir = sunUp ? sun.dir : moonLight > starlight ? sun.moon : SKYGLOW;
     const at = this.climber.root.position;
     key.target.position.copy(at);
     key.position.copy(at).addScaledVector(dir.y < 0.05 ? dir.clone().setY(0.05).normalize() : dir, 70);
@@ -1515,7 +1524,7 @@ export class Stage {
       key.intensity = look.sunI * 1.25 * (1 + this.golden * 0.25);
     } else {
       key.color.set('#8fa4d8');
-      key.intensity = look.moonI * (1 - cover * 0.7) * moonUp * (0.25 + 0.75 * sun.moonLit);
+      key.intensity = Math.max(moonLight, starlight * clamp01((-sun.elev - 4) / 6));
     }
     // The rim: cool from behind by night; in the golden hour, the sun itself along her edges.
     this.rim.color.set('#9db4ff').lerp(look.sun, this.golden);
@@ -1540,6 +1549,8 @@ export class Stage {
     this.lying += (c.lying - this.lying) * ease1;
     weatherFx.wet.value = this.wet;
     weatherFx.snow.value = this.lying;
+    weatherFx.grow.value = 1 - clamp01(this.lying * 1.2) * 0.85;
+    this.meadow.setSeason(c.season);
     weatherFx.tint.value.lerp(SEASON_TINT[c.season], ease1);
     this.forest.bushes.color.lerp(BUSH[c.season], ease1);
     this.puddles.update(this.wet * (1 - this.lying), look.horizon.clone().lerp(look.zenith, 0.4));
@@ -1608,6 +1619,7 @@ export class Stage {
     const coarse = window.matchMedia('(pointer: coarse)').matches;
     const dpr = window.devicePixelRatio || 1;
     this.renderer.setPixelRatio(Math.min(dpr, this.tier === 0 ? 1 : coarse ? 1.5 : 1.75));
+    this.meadow?.setTier(this.tier);
     this.resize();
   }
 
@@ -1774,6 +1786,7 @@ export class Stage {
     this.fatigue += toward * (1 - Math.exp(-dt / (toward < 0 ? 4 : 40)));
     this.breathPhase += dt * ((Math.PI * 2) / (3.8 - this.fatigue * 1.3));
     c.overlay(this.clock, cold, !this.reduced, this.breathPhase, this.fatigue);
+    if (!this.reduced) c.flutter(this.clock, this.wind.strength, this.phase === 'walk' ? 1 : 0);
     this.tendWeather(dt);
     this.kit.update(this.clock, this.wind.strength);
     // Keep the flask where this screen can see it (not while it is in her hand).
