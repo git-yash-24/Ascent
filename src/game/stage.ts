@@ -31,7 +31,7 @@ import { createSound, type Sound } from '../prototype/shared/audio';
 import { buildFlask, buildJournal, ghostify, type Journal } from './props';
 import { DAY_GAP, WeekTrail, YearRoute, YEAR_STAGES, type Anchor, type TrailDay } from './trail';
 import { buildKit, symbolTexture, type Kit } from './kit';
-import type { TrailSymbol } from '../core/model/types';
+import type { DateKey, TrailSymbol } from '../core/model/types';
 import type { Weather } from '../core/world';
 
 export type { Anchor, TrailDay };
@@ -126,6 +126,10 @@ export class Stage {
   /** Today's weather, season and what follows from them (game/conditions.ts). */
   private cond: Conditions = todaysConditions('calm', new Date());
   private kindOverride: Kind | null = null;
+  /** A replay shows its own day: season, weather and the recorded hour of each moment. */
+  private replay: { kind: Kind; season: Season; day: Date } | null = null;
+  private replayAt: number | null = null;
+  private moonOverride: number | null = null;
   private seasonOverride: Season | null = null;
   private condDay = '';
   private readonly rain: Rain;
@@ -618,8 +622,31 @@ export class Stage {
     this.refreshConditions();
   }
 
-  get previewing(): { hour: number | null; kind: Kind | null; season: Season | null } {
-    return { hour: this.hourOverride, kind: this.kindOverride, season: this.seasonOverride };
+  /** Environment Lab: the moon at any age in days, 0 new to 29.5 (null: tonight's). Writes nothing. */
+  previewMoon(age: number | null): void {
+    this.moonOverride = age;
+  }
+
+  get previewing(): { hour: number | null; kind: Kind | null; season: Season | null; moon: number | null } {
+    return { hour: this.hourOverride, kind: this.kindOverride, season: this.seasonOverride, moon: this.moonOverride };
+  }
+
+  /** A replay of `date` (null ends it): that day's season and weather, from its canon. */
+  replayDay(date: DateKey | null, canon: Weather = 'calm'): void {
+    if (date === null) {
+      this.replay = null;
+      this.replayAt = null;
+    } else {
+      const d = new Date(`${date}T12:00:00`);
+      const season = seasonOf(d);
+      this.replay = { season, kind: kindFor(canon, season, d), day: d };
+    }
+    this.refreshConditions();
+  }
+
+  /** The hour a replayed moment was recorded at (the sky shows it). */
+  replayHour(h: number): void {
+    this.replayAt = h;
   }
 
   /** Today's weather as the world shows it (for the Lab and the screen's caption). */
@@ -636,8 +663,8 @@ export class Stage {
   /** Canon + season + date → conditions. Runs on a change and once a minute (the date rolls over). */
   private refreshConditions(): void {
     const now = new Date();
-    const season = this.seasonOverride ?? seasonOf(now);
-    const kind = this.kindOverride ?? kindFor(this.recordWeather, season, now);
+    const season = this.replay?.season ?? this.seasonOverride ?? seasonOf(now);
+    const kind = this.replay?.kind ?? this.kindOverride ?? kindFor(this.recordWeather, season, now);
     const prev = this.cond.kind + this.cond.season;
     this.cond = conditionsFor(kind, season);
     this.condDay = now.toDateString();
@@ -1443,10 +1470,12 @@ export class Stage {
     const now = new Date();
     if (now.toDateString() !== this.condDay) this.refreshConditions();
     const c = this.cond;
-    const previewing = this.kindOverride !== null || this.seasonOverride !== null || this.hourOverride !== null;
-    const hour = this.hourOverride ?? now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
-    const doy = dayOfYear(now);
-    const sun = sunAt(hour, doy, LATITUDE, moonAge(now));
+    const previewing = this.kindOverride !== null || this.seasonOverride !== null || this.hourOverride !== null || this.replay !== null;
+    const hour = this.replayAt ?? this.hourOverride ?? now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    // A replay's sun and moon are its own day's.
+    const day = this.replay?.day ?? now;
+    const doy = dayOfYear(day);
+    const sun = sunAt(hour, doy, LATITUDE, this.moonOverride ?? moonAge(this.replay ? new Date(day.getTime() + (hour - 12) * 3_600_000) : now));
     sun.dir.applyAxisAngle(UP, AZIMUTH);
     sun.moon.applyAxisAngle(UP, AZIMUTH);
     this.sunElev = sun.elev;

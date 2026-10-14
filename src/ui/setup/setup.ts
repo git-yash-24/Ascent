@@ -311,6 +311,8 @@ export class SetupView {
       lights,
       h('label', { class: 'check', for: 'set-shake' }, box, h('span', { text: 'Shake the phone to stir the world' })),
       note,
+      h('a', { class: 'btn', href: '#today', onclick: () => openLab() }, 'Preview time, season and weather'),
+      h('p', { class: 'hint', text: 'Sliders for the time of day, the season, the weather and the moon, over the camp. A preview: it never changes your record.' }),
     );
   }
 

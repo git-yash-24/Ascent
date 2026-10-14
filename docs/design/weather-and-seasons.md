@@ -129,12 +129,13 @@ screen, reduced motion, at load) is simply done.
 
 ## 5. Checking it
 
-The Environment Lab (five taps on the version in About, or `?lab`) previews any of the following
-without writing anything:
+The Environment Lab (Setup → You → The world → "Preview time, season and weather", or `?lab`)
+has sliders for the following, and writes nothing:
 
-- an hour (with presets for dawn, golden, dusk, blue, night and noon);
-- any of the twelve kinds;
-- any season;
-- a shake.
+- the time of day (with presets for dawn, golden, dusk, blue, night and noon);
+- the season;
+- the weather, any of the twelve kinds;
+- the moon, any day of its cycle;
+- plus a Shake button.
 
 The readout shows the frame time, the quality tier, the sun's elevation and the season and kind.

@@ -69,4 +69,7 @@ reduced motion, keyboard, ghost click.
   with a low camera, Ari's light, clothes and shelter, shake (opt-in).
 - Phase 4 art pass (G-61 to G-64): Ari rebuilt from turned shapes with a real pack, cloth that
   moves, a grass-and-flower meadow on the quality tiers, starlight on moonless nights. A rigged,
-  modelled Ari still needs a model file. Next: Phase 5, honest replays.
+  modelled Ari still needs a model file.
+- Phase 5 (G-65): honest replays in recorded order and times, the day's own world, "logged later"
+  and "time not recorded" said plainly. The Lab's sliders for time, season, weather and moon are
+  now reachable from Setup (G-66). All five phases of the plan are in.

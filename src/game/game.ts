@@ -22,6 +22,7 @@ import { h } from '../ui/dom';
 import { BaseCampSheet } from './basecamp';
 import { holdable } from './hold';
 import { CARD_SECONDS, dayCards, type Card } from './montage';
+import { glassTimes } from '../core/timeline';
 import { Stage, type TrailDay } from './stage';
 import { TodaySheet } from './today';
 import { OptionsSheet } from './ui';
@@ -508,15 +509,8 @@ export class GameView {
       const ww = now.derived.water;
       if (!ww || !id) return;
       const e = entryOfToday(now, id);
-      // Replay the count's history: each glass added takes that action's time; a removal takes
-      // the latest one back. Glasses from before times were kept have none.
-      const times: Array<number | null> = [];
-      (e?.acts ?? []).forEach((a, i) => {
-        const n = a.v ?? 0;
-        if (i === 0) for (let k = 0; k < n - 1; k++) times.push(null);
-        while (times.length > n) times.pop();
-        while (times.length < n) times.push(a.at);
-      });
+      // Each glass added takes that action's time; a removal takes the latest one back.
+      const times = glassTimes(e?.acts, ww.today);
       const shown = times.slice(0, ww.today).filter((t): t is number => t !== null);
       const untimed = Math.max(0, ww.today - shown.length);
       const fmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -677,6 +671,8 @@ export class GameView {
     const cards = dayCards(v, date);
     const anchor = this.stage?.anchors.find((a) => a.date === date);
     if (anchor) this.stage?.playMontage(anchor, cards.length, CARD_SECONDS);
+    // The world shows that day: its season and weather, and each card's recorded hour.
+    this.stage?.replayDay(date, weatherOf(v.derived, date));
     const bar = h('div', { class: 'reel-progress' });
     const card = h('div', { class: 'reel-card glass', 'aria-live': 'polite' });
     const skip = h('button', { class: 'reel-skip', type: 'button', text: 'Close' });
@@ -690,7 +686,11 @@ export class GameView {
     skip.focus();
     let k = 0;
     const show = (c: Card): void => {
-      card.replaceChildren(h('span', { class: 'reel-k', text: c.kicker }), h('span', { class: `reel-t${c.quote ? ' quote' : ''}`, text: c.quote ? `“${c.text}”` : c.text }));
+      const kick = h('span', { class: 'reel-k', text: c.kicker });
+      if (c.time) kick.append(h('span', { class: 'reel-time', text: ` · ${c.time}` }));
+      card.replaceChildren(kick, h('span', { class: `reel-t${c.quote ? ' quote' : ''}`, text: c.quote ? `“${c.text}”` : c.text }));
+      if (c.note) card.append(h('span', { class: 'reel-note', text: c.note }));
+      if (c.hour !== undefined) this.stage?.replayHour(c.hour);
       card.style.setProperty('--fam', c.color ?? 'rgba(255,255,255,.5)');
       card.classList.toggle('dim', c.dim === true);
       card.classList.remove('in');
@@ -717,6 +717,7 @@ export class GameView {
     window.clearTimeout(this.playing.timer);
     this.playing = null;
     this.stage?.endMontage();
+    this.stage?.replayDay(null);
     this.reel.hidden = true;
     this.root.classList.remove('replaying');
     this.setModal(false);

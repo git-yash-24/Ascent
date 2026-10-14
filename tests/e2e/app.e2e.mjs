@@ -302,7 +302,10 @@ await test('game: tapping a day on the week screen replays it, and it can be clo
   const first = await page.locator('.reel-card').textContent();
   assert(first.includes('Today, still being written'), `first card: ${first}`);
   await page.waitForTimeout(1400);
-  assert((await page.locator('.reel-card').textContent()).includes('Qbank'), 'second card is not the habit');
+  const second = await page.locator('.reel-card').textContent();
+  assert(second.includes('Qbank'), 'second card is not the habit');
+  // Honest replay: the habit shows the time it was recorded, in the record's own clock.
+  assert(/· \d\d:\d\d/.test(second), `no recorded time on the habit card: ${second}`);
   // A real modal: nothing behind it takes focus or keys.
   assert(await page.locator('.pager').evaluate((e) => e.inert), 'screens behind the replay are not inert');
   await page.keyboard.press('Alt+PageDown');
@@ -579,6 +582,34 @@ await test('world: the flask is in view and clear of the controls on Today and C
     const p = await where();
     assert(p.front && p.x > 20 && p.x < p.w - 20 && p.y > 60 && p.y < p.controls - 10, `${screen}: flask at ${Math.round(p.x)},${Math.round(p.y)} (controls from ${Math.round(p.controls)})`);
   }
+});
+
+await test('world: sliders for time, season, weather and moon preview the world and write nothing (with the world)', async (page) => {
+  await page.goto(`${base}?debug`);
+  await startGame(page);
+  const before = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  await page.evaluate(() => (location.hash = '#setup-settings'));
+  await page.getByRole('link', { name: 'Preview time, season and weather' }).click();
+  await page.locator('.lab').waitFor();
+  await page.locator('#lab-time').fill('17.5');
+  await page.locator('#lab-season').fill('4');
+  await page.locator('#lab-weather').fill('12');
+  await page.locator('#lab-moon').fill('14.75');
+  const p = await page.evaluate(() => {
+    const s = window.__stage;
+    return { ...s.previewing, kind: s.conditions.kind, season: s.conditions.season };
+  });
+  assert(p.hour === 17.5 && p.season === 'winter' && p.kind === 'blizzard' && p.moon === 14.75, `previews not applied: ${JSON.stringify(p)}`);
+  assert((await page.locator('label[for="lab-moon"] output').textContent()).includes('Full moon'), 'moon phase not named');
+  const lab = page.locator('.lab');
+  await lab.getByRole('button', { name: 'Hide' }).click();
+  assert(await page.locator('.lab-body').isHidden(), 'the panel did not fold');
+  await lab.getByRole('button', { name: 'Show' }).click();
+  await lab.getByRole('button', { name: 'Back to live' }).click();
+  const q = await page.evaluate(() => window.__stage.previewing);
+  assert(q.hour === null && q.kind === null && q.season === null && q.moon === null, 'Back to live left a preview');
+  const after = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  assert(before === after, 'previewing changed the stored record');
 });
 
 await test('game: closing the day plays the reward and says so (with the world)', async (page) => {

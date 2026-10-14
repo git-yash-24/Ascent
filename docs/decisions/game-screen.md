@@ -361,6 +361,23 @@ time of day, and how she reacts: clothes, shelter, covering her things. The full
 - **G-64 Nights without a moon keep starlight**: a faint cool light from overhead when the moon is
   down or thin, so the land and Ari stay readable; her own light still does most of the work.
 
+## Phase 5: honest replays, and the sliders (14 Oct)
+
+- **G-65 A replay tells the day as it was recorded.** Habits come in the order they were
+  recorded, each with its time in the record's own clock ("Qbank · 10:12 → 18:40" when begun and
+  finished at different times); the flask lists its glasses' times. The world shows that day:
+  its season, the weather its week earned, its sun and moon, and the sky moves to each card's
+  recorded hour. Honest about what it cannot know: a day recorded later says "logged later, Thu
+  15 Oct" (and keeps today's sky out of it), and anything without a time says "time not
+  recorded", after the timed ones. Nothing is placed at a time it did not happen
+  (`src/core/timeline.ts`).
+- **G-66 The sliders are one tap away.** Setup → You → The world → "Preview time, season and
+  weather" opens the Environment Lab with four sliders: time of day (with the band it falls in),
+  season (calendar, then the four), weather (the record's, then all twelve kinds) and the moon
+  (tonight's, then any day of its cycle, named by phase). It folds to one line to look at the
+  world, has a Shake button and Back to live, and writes nothing. The About part's five-tap
+  unlock still works.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).
