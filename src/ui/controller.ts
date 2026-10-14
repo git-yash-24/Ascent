@@ -14,6 +14,7 @@ import { suggestTag } from '../core/tags';
 import { NOTE_MAX } from '../core/model/schemas';
 import { backupDue, exportCsv, exportJson, backupFileName, prepareImport, type PreparedImport } from '../data/backup/backup';
 import type { SyncedStore, StoreState } from '../data/store';
+import { checkDay, type TrialState } from '../data/trial';
 import type { KV } from '../data/sync/journal';
 
 /**
@@ -49,6 +50,7 @@ export const systemClock: Clock = {
 };
 
 const CURSOR_KEY = 'ascent:cursor:v1';
+const TRIAL_KEY = 'ascent:trial:v1';
 const BACKUP_KEY = 'ascent:lastBackup:v1';
 const LAUNCHED_KEY = 'ascent:launched:v1';
 
@@ -518,6 +520,32 @@ export class Controller {
 
   private saveCursor(): void {
     this.kvSet(CURSOR_KEY, JSON.stringify(this.cursor));
+  }
+
+  // M10: the 14-day check -----------------------------------------------------------------
+
+  /** This device's record check so far (data/trial.ts), or null before the first one. */
+  trialState(): TrialState | null {
+    try {
+      return JSON.parse(this.kvGet(TRIAL_KEY) ?? 'null') as TrialState | null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Once a day (or now, when asked): compare the whole record with yesterday's fingerprint and
+   * check that a backup reads back identical. Read-only; skipped while the account store could
+   * not be read (an offline copy would look like lost records).
+   */
+  trialCheck(app: string, force = false): TrialState | null {
+    const st = this.store.current;
+    if (st.offline || !st.snapshot.profile) return this.trialState();
+    const prev = this.trialState();
+    if (!force && prev?.last?.day === this.today) return prev;
+    const next = checkDay(prev, st.snapshot, this.today, app, this.clock.now());
+    this.kvSet(TRIAL_KEY, JSON.stringify(next));
+    return next;
   }
 
   private kvGet(k: string): string | null {

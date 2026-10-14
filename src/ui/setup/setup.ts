@@ -16,6 +16,7 @@ import { EXPEDITION_NAME_MAX } from '../../core/model/schemas';
 import { markPicker } from '../../game/onboard';
 import { labUnlocked, openLab } from '../lab';
 import { askMotion, LIGHT_STYLES, setWorldPrefs, worldPrefs } from '../worldPrefs';
+import { TRIAL_DAYS } from '../../data/trial';
 
 export interface Saver {
   /** Offer a file to the viewer. Resolves false when declined or unavailable. */
@@ -84,7 +85,7 @@ export class SetupView {
     const parts: Record<Part, () => HTMLElement[]> = {
       habits: () => [this.habits(v), this.water(v)],
       you: () => [this.expedition(v), this.settings(v)],
-      data: () => [this.correct(v), this.backup(v), this.sync(v)],
+      data: () => [this.correct(v), this.trial(v), this.backup(v), this.sync(v)],
       about: () => [this.about()],
     };
     this.body.append(tabs, ...parts[this.part]());
@@ -381,6 +382,48 @@ export class SetupView {
 
   // Backup ---------------------------------------------------------------------------------
 
+  /** M10, the 14 days of real use: this device's daily record check (data/trial.ts). */
+  private trial(v: View): HTMLElement {
+    const out = h('div', { class: 'trial', role: 'status' });
+    const name = (id: string): string => v.snapshot.habits.habits.find((x) => x.id === id)?.name ?? 'a removed habit';
+    const draw = (st: ReturnType<Controller['trialState']>): void => {
+      if (!st || !st.days.length) {
+        out.replaceChildren(h('p', { class: 'hint', text: 'The first check runs once your record has opened today.' }));
+        return;
+      }
+      const days = st.days.length;
+      const lost = st.days.reduce((n, d) => n + d.lost, 0);
+      const changed = st.days.reduce((n, d) => n + d.changed, 0);
+      const roundBad = st.days.filter((d) => !d.roundTrip).length;
+      const edits = st.days.reduce((n, d) => n + d.edits, 0);
+      const clean = lost === 0 && changed === 0 && roundBad === 0;
+      const lines: Array<HTMLElement> = [
+        h('p', { class: 'trial-day', text: `Checked on ${days} of ${TRIAL_DAYS} days, since ${shortDate(st.start)}.` }),
+        h('p', {
+          class: clean ? 'good' : 'bad',
+          text: clean
+            ? `Nothing lost, nothing changed without an edit, and backups read back identical.${days >= TRIAL_DAYS ? ' The 14 days are clean on this device.' : ''}`
+            : `${lost} lost, ${changed} changed without an edit, ${roundBad} backup round trip${roundBad === 1 ? '' : 's'} not identical.`,
+        }),
+        h('p', { class: 'hint', text: `${edits} edit${edits === 1 ? '' : 's'} of your own along the way (not problems).` }),
+      ];
+      for (const f of st.findings.slice(0, 8)) {
+        lines.push(h('p', { class: 'bad', text: `${f.kind === 'lost' ? 'Lost' : 'Changed'}: ${name(f.habit)} on ${shortDate(f.date)} (was ${f.was.split('@')[0]}${f.now ? `, now ${f.now.split('@')[0]}` : ''}).` }));
+      }
+      out.replaceChildren(...lines);
+    };
+    draw(this.app.trialState() ?? this.app.trialCheck(this.appVersion));
+    const now = h('button', { class: 'btn', type: 'button', text: 'Check now' });
+    now.addEventListener('click', () => draw(this.app.trialCheck(this.appVersion, true)));
+    return section(
+      'setup-trial',
+      'The 14-day check',
+      'Every day this device compares your whole record with yesterday\'s: nothing may vanish or change unless you edited it, and a backup must read back identical. It only reads.',
+      out,
+      h('div', { class: 'row-actions' }, now),
+    );
+  }
+
   private backup(_v: View): HTMLElement {
     const files = (): ReturnType<Controller['exportFiles']> => this.app.exportFiles(this.appVersion);
     const json = h('button', { class: 'btn primary', text: 'Save a backup' });
@@ -517,6 +560,7 @@ const PART_OF: Record<string, Part> = {
   'setup-expedition': 'you',
   'setup-settings': 'you',
   'setup-correct': 'data',
+  'setup-trial': 'data',
   'setup-backup': 'data',
   'setup-sync': 'data',
   'setup-about': 'about',

@@ -529,7 +529,7 @@ await test('Setup: one part at a time; deep links open the right part; the Lab s
 
 await test("Setup: Ari's light and shake are this device's choices; they never touch the record", async (page) => {
   await startGame(page);
-  const before = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  const before = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world') && !k.startsWith('ascent:trial')).sort().map((k) => [k, localStorage.getItem(k)])));
   await page.evaluate(() => (location.hash = '#setup-settings'));
   await page.getByText('The world (this device)').waitFor();
   assert(await page.getByLabel('Lantern').isChecked(), 'lantern is not the default');
@@ -541,8 +541,20 @@ await test("Setup: Ari's light and shake are this device's choices; they never t
   await page.getByText('The world (this device)').waitFor();
   assert(await page.getByLabel('Glow stick').isChecked(), 'light choice not kept');
   assert(await page.getByLabel('Shake the phone to stir the world').isChecked(), 'shake choice not kept');
-  const after = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  const after = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world') && !k.startsWith('ascent:trial')).sort().map((k) => [k, localStorage.getItem(k)])));
   assert(before === after, 'the world choices changed the stored record');
+});
+
+await test('M10: the 14-day check reads the record daily and reports nothing lost', async (page) => {
+  await startGame(page);
+  await hold(page, chip(page, 'Qbank'), 850);
+  await page.evaluate(() => (location.hash = '#setup-trial'));
+  const box = page.getByRole('region', { name: 'The 14-day check' });
+  await box.waitFor();
+  assert((await box.textContent()).includes('Checked on 1 of 14 days'), `not checked: ${await box.textContent()}`);
+  await box.getByRole('button', { name: 'Check now' }).click();
+  const text = await box.textContent();
+  assert(text.includes('Nothing lost, nothing changed without an edit'), `check did not pass: ${text}`);
 });
 
 await test('water close-up: count, the time of each glass, remove with Undo', async (page) => {
@@ -587,7 +599,7 @@ await test('world: the flask is in view and clear of the controls on Today and C
 await test('world: sliders for time, season, weather and moon preview the world and write nothing (with the world)', async (page) => {
   await page.goto(`${base}?debug`);
   await startGame(page);
-  const before = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  const before = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world') && !k.startsWith('ascent:trial')).sort().map((k) => [k, localStorage.getItem(k)])));
   await page.evaluate(() => (location.hash = '#setup-settings'));
   await page.getByRole('link', { name: 'Preview time, season and weather' }).click();
   await page.locator('.lab').waitFor();
@@ -608,7 +620,7 @@ await test('world: sliders for time, season, weather and moon preview the world 
   await lab.getByRole('button', { name: 'Back to live' }).click();
   const q = await page.evaluate(() => window.__stage.previewing);
   assert(q.hour === null && q.kind === null && q.season === null && q.moon === null, 'Back to live left a preview');
-  const after = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world')).sort().map((k) => [k, localStorage.getItem(k)])));
+  const after = await page.evaluate(() => JSON.stringify(Object.keys(localStorage).filter((k) => !k.startsWith('ascent:world') && !k.startsWith('ascent:trial')).sort().map((k) => [k, localStorage.getItem(k)])));
   assert(before === after, 'previewing changed the stored record');
 });
 

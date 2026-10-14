@@ -161,7 +161,11 @@ export async function boot(root: HTMLElement): Promise<void> {
   });
 
   // The day rolls only at the boundary, checked on a timer and whenever the app comes back.
-  const check = (): void => app.checkDay();
+  const check = (): void => {
+    app.checkDay();
+    // M10: once a day, the record is checked against yesterday's (nothing lost, nothing changed).
+    if (opened) app.trialCheck(__APP_VERSION__);
+  };
   setInterval(check, 30_000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') check();
