@@ -171,11 +171,11 @@ export function advice(d: Derived, list: Standing[], today: DateKey, steepAvaila
       out.push({
         id: 'weakest',
         family: weakest.family,
-        text: `${weakest.habit.name} is the shortest rope this week. Weekly totals count, so one big session ${daysLeft > 0 ? 'before Sunday ' : 'today '}still closes the ${gap}% gap.`,
+        text: `${weakest.habit.name} is the shortest rope this week. Weekly totals count, so one big session ${daysLeft > 0 ? 'before Sunday ' : 'today '}still closes the ${gap}-point gap to the climb (it needs ${Math.round(bar * 100)}%).`,
       });
-    } else out.push({ id: 'gap', text: `${gap}% to the climb this week, with ${daysLeft + 1} ${daysLeft === 0 ? 'day' : 'days'} left.` });
+    } else out.push({ id: 'gap', text: `${gap} points short of the climb this week (it needs ${Math.round(bar * 100)}%), with ${daysLeft + 1} ${daysLeft === 0 ? 'day' : 'days'} left.` });
   } else if (score !== null && score >= bar && score < CLIMB.summit && cur?.verdict !== 'rest') {
-    out.push({ id: 'summit', text: `The climb is secured. ${Math.ceil((CLIMB.summit - score) * 100)}% more makes it a summit push.` });
+    out.push({ id: 'summit', text: `The climb is secured. ${Math.ceil((CLIMB.summit - score) * 100)} more points makes it a summit push (85%).` });
   }
   if (steepAvailable) out.push({ id: 'steep', text: 'Strong weeks behind you. Take the steep line before your first tick: 70% this week earns a 10% head start next week.' });
   if (d.condition.fatigue !== 'fresh' && d.rates.last7 !== null) {

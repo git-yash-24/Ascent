@@ -82,6 +82,18 @@ export interface Entry {
   at: number;
   /** Device id. */
   dev: string;
+  /**
+   * Each change to this habit-day, oldest first: when it was recorded and what it became.
+   * Recorded from 13 Oct 2026 on; older entries have none. A record time, not proof of when
+   * the thing itself was done (a backfill is recorded when it is entered).
+   */
+  acts?: Act[];
+}
+
+export interface Act {
+  at: number;
+  v?: number;
+  skip?: SkipReason;
 }
 
 export interface MonthLog {
@@ -143,6 +155,26 @@ export interface Snapshot {
   seen: SeenDoc;
   corrections: CorrectionsDoc;
   notes: NotesDoc;
+  expedition: ExpeditionDoc;
+}
+
+/** Trail symbols: one marks Ari's flag and pack and is carved at the first camp. */
+export type TrailSymbol = 'peak' | 'star' | 'wave' | 'pine' | 'flame';
+/** Accent colours for Ari's scarf and the tent ribbon. */
+export type Accent = 'ember' | 'moss' | 'glacier' | 'plum' | 'ochre' | 'ash';
+
+/**
+ * The person's expedition: small, optional, personal marks. Ari stays Ari; these make the
+ * journey theirs (docs/decisions: model D). Private, like everything else.
+ */
+export interface ExpeditionDoc {
+  schema: number;
+  /** An optional name for the journey, shown only to the person. */
+  name?: string;
+  symbol?: TrailSymbol;
+  accent?: Accent;
+  /** The day the opening scene was seen or skipped; it plays once. */
+  introOn?: DateKey;
 }
 
 /** The person's journal: at most one short note per day. Stored as `notes` (the word journal is

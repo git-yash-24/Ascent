@@ -167,7 +167,7 @@ export class SyncedStore {
       this.journal.append({ id: opId(this.dev, at), kind: 'entry', date: w.date, habit: w.habit, e: w.e });
     }
     if (incoming.profile) this.journal.append({ id: opId(this.dev, at), kind: 'doc', doc: 'profile', body: incoming.profile, at });
-    for (const doc of ['habits', 'seen', 'corrections', 'notes'] as const) {
+    for (const doc of ['habits', 'seen', 'corrections', 'notes', 'expedition'] as const) {
       this.journal.append({ id: opId(this.dev, at), kind: 'doc', doc, body: incoming[doc], at });
     }
     this.rebuild();
@@ -323,8 +323,10 @@ export class SyncedStore {
     try {
       const raw = this.kv.get(CACHE_KEY);
       if (!raw) return null;
-      const docs = JSON.parse(raw) as { snapshot?: Snapshot };
-      return docs.snapshot ?? null;
+      const docs = JSON.parse(raw) as { snapshot?: Partial<Snapshot> };
+      if (!docs.snapshot) return null;
+      // A copy cached by an older version lacks the documents added since; they start empty.
+      return { ...emptySnapshot(), ...docs.snapshot };
     } catch {
       return null;
     }

@@ -142,3 +142,15 @@ describe('the weekly backup prompt', () => {
     expect(backupDue({ ...base, firstLaunch: true })).toBe(false);
   });
 });
+
+describe('restore keeps the record\'s times (speedrun finding)', () => {
+  it('carries each entry\'s action history through replaceWrites', async () => {
+    const { replaceWrites } = await import('../../src/data/backup/backup');
+    const { emptySnapshot } = await import('../../src/core/model/snapshot');
+    const s = emptySnapshot();
+    const incoming = { ...s, logs: { '2026-10': { schema: 1, days: { '2026-10-14': { q: { v: 1, at: 5, dev: 'a', acts: [{ at: 3, v: 1 }] } } } } } } as unknown as Snapshot;
+    const w = replaceWrites(s, incoming, 99, 'b');
+    expect(w[0]?.e.acts).toEqual([{ at: 3, v: 1 }]);
+    expect(w[0]?.e.at).toBe(99);
+  });
+});

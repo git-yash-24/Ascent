@@ -200,7 +200,7 @@ export class YearSheet {
     const c = v.derived.climb;
     const d = v.derived;
     this.caption.replaceChildren(
-      h('span', { class: 'cap-day', text: `Chapter ${c.chapter + 1} · Stage ${c.stage + 1}` }),
+      h('span', { class: 'cap-day', text: `${v.snapshot.expedition.name ? `${v.snapshot.expedition.name} · ` : ''}Chapter ${c.chapter + 1} · Stage ${c.stage + 1}` }),
       h('span', { class: 'cap-line', text: `${d.lifetime.daysShownUp} ${d.lifetime.daysShownUp === 1 ? 'day' : 'days'} on the mountain` }),
     );
     const inChapter = c.stage % CLIMB.stagesPerChapter;
@@ -249,7 +249,7 @@ function verdictLine(verdict: Verdict, score: number, barAt: number): string {
   if (verdict === 'rest') return 'Rest week';
   if (score >= CLIMB.summit) return 'Summit push';
   if (score >= barAt) return 'Climb secured';
-  return `${Math.ceil((barAt - score) * 100)}% to the climb`;
+  return `This week ${Math.round(score * 100)}% · the climb needs ${Math.round(barAt * 100)}%`;
 }
 
 function short(d: DateKey): string {

@@ -10,5 +10,6 @@ export function emptySnapshot(): Snapshot {
     seen: { schema: CURRENT_SCHEMA.seen, presentedStoryDay: 0, episodes: [], moments: [], records: [] },
     corrections: { schema: CURRENT_SCHEMA.corrections, log: [] },
     notes: { schema: CURRENT_SCHEMA.notes, entries: {} },
+    expedition: { schema: CURRENT_SCHEMA.expedition },
   };
 }

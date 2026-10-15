@@ -7,6 +7,10 @@ export interface Sound {
   start(): Promise<void>;
   setMuted(m: boolean): void;
   setFire(level: number): void;
+  /** The shared wind, 0 still to 1 storm: the wind bed follows it. */
+  setWind(level: number): void;
+  /** Daylight 0 to 1: birds now and then in fair daylight. */
+  setDaylight(level: number): void;
   setWalking(on: boolean): void;
   step(): void;
   tick(): void;
@@ -23,6 +27,12 @@ export interface Sound {
   scribble(): void;
   /** A soft bell for each beat of a day's replay. */
   chime(step: number): void;
+  /** Rain on the meadow and the tarp, 0 to 1. */
+  setRain(level: number): void;
+  /** Thunder after `delay` seconds (light travels faster than sound), `power` 0 to 1. */
+  thunder(delay: number, power: number): void;
+  /** Crickets on warm nights, 0 to 1. */
+  setCrickets(level: number): void;
 }
 
 export function createSound(): Sound {
@@ -33,9 +43,17 @@ export function createSound(): Sound {
   let droneGain: GainNode | null = null;
   let noise: AudioBuffer | null = null;
   let fireLevel = 0.2;
+  let windGain: GainNode | null = null;
+  let windLevel = 0.2;
+  let daylight = 0;
+  let birdTimer = 0;
   let crackleTimer = 0;
   let muted = false;
   let started = false;
+  let rainGain: GainNode | null = null;
+  let rainLevel = 0;
+  let crickets = 0;
+  let cricketTimer = 0;
 
   const now = (): number => ctx?.currentTime ?? 0;
 
@@ -142,6 +160,28 @@ export function createSound(): Sound {
         lfo2.connect(lfo2g).connect(wf.frequency);
         lfo2.start();
         wind.connect(wf).connect(wg).connect(master);
+        windGain = wg;
+        // Birds: a short falling whistle now and then, only in fair daylight.
+        birdTimer = window.setInterval(() => {
+          if (!ctx || muted || daylight < 0.6 || windLevel > 0.5 || Math.random() > 0.18) return;
+          const t0 = now();
+          const n = 2 + Math.floor(Math.random() * 3);
+          const f0 = 2600 + Math.random() * 1400;
+          for (let i = 0; i < n; i++) {
+            const o = ctx.createOscillator();
+            const g = ctx.createGain();
+            o.type = 'sine';
+            const t = t0 + i * (0.09 + Math.random() * 0.05);
+            o.frequency.setValueAtTime(f0, t);
+            o.frequency.exponentialRampToValueAtTime(f0 * 0.72, t + 0.08);
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.018, t + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+            o.connect(g).connect(master!);
+            o.start(t);
+            o.stop(t + 0.12);
+          }
+        }, 1500);
 
         // Fire: a low rumble plus crackle pops.
         const rumble = loopNoise(ctx, brown);
@@ -171,6 +211,22 @@ export function createSound(): Sound {
         droneGain.connect(df).connect(master);
 
         crackleTimer = window.setInterval(scheduleCrackles, 100);
+        // Rain: a hiss of high noise, with the patter of drops on cloth.
+        const rain = loopNoise(ctx, noise);
+        const rhp = ctx.createBiquadFilter();
+        rhp.type = 'highpass';
+        rhp.frequency.value = 1400;
+        rainGain = ctx.createGain();
+        rainGain.gain.value = 0;
+        rain.connect(rhp).connect(rainGain).connect(master);
+        sound.setRain(rainLevel);
+        // Crickets: two quick chirps now and then, on warm nights only.
+        cricketTimer = window.setInterval(() => {
+          if (!ctx || muted || crickets < 0.05 || Math.random() > crickets * 0.6) return;
+          const t0 = now() + Math.random() * 0.3;
+          const f = 4300 + Math.random() * 500;
+          for (let i = 0; i < 3; i++) tone(f, t0 + i * 0.05, 0.04, 0.008 * crickets, 'triangle');
+        }, 420);
         started = true;
         sound.setFire(fireLevel);
       } catch {
@@ -181,6 +237,13 @@ export function createSound(): Sound {
     setMuted(m: boolean) {
       muted = m;
       if (ctx && master) master.gain.setTargetAtTime(m ? 0 : 0.8, now(), 0.2);
+    },
+    setWind(level: number) {
+      windLevel = level;
+      if (ctx && windGain) windGain.gain.setTargetAtTime(0.025 + level * 0.12, now(), 0.8);
+    },
+    setDaylight(level: number) {
+      daylight = level;
     },
     setFire(level: number) {
       fireLevel = level;
@@ -260,11 +323,41 @@ export function createSound(): Sound {
     scribble() {
       for (let i = 0; i < 4; i++) burst({ freq: 4200 + Math.random() * 1500, q: 2, gain: 0.025, decay: 0.05, at: now() + i * 0.07 });
     },
+    setRain(level: number) {
+      rainLevel = level;
+      if (ctx && rainGain) rainGain.gain.setTargetAtTime(level * 0.09, now(), 1.2);
+      if (ctx && level > 0.05 && Math.random() < level * 0.5) burst({ freq: 2500 + Math.random() * 2500, q: 3, gain: 0.03 * level, decay: 0.03, at: now() + Math.random() * 0.2 });
+    },
+    setCrickets(level: number) {
+      crickets = level;
+    },
+    thunder(delay: number, power: number) {
+      if (!ctx || !master || !noise) return;
+      const t = now() + delay;
+      const src = ctx.createBufferSource();
+      src.buffer = noise;
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.setValueAtTime(420, t);
+      f.frequency.exponentialRampToValueAtTime(90, t + 3.5);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.5 * power, t + 0.08);
+      g.gain.setTargetAtTime(0.18 * power, t + 0.3, 0.4);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 4.2);
+      src.connect(f).connect(g).connect(master);
+      src.start(t, Math.random());
+      src.stop(t + 4.3);
+    },
     chime(step: number) {
       const scale = [392, 440, 523.3, 587.3, 659.3, 784, 880];
       tone(scale[step % scale.length] ?? 523.3, now(), 1.2, 0.04);
     },
   };
-  window.addEventListener('pagehide', () => window.clearInterval(crackleTimer));
+  window.addEventListener('pagehide', () => {
+    window.clearInterval(crackleTimer);
+    window.clearInterval(birdTimer);
+    window.clearInterval(cricketTimer);
+  });
   return sound;
 }
