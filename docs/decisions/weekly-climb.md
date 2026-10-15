@@ -49,7 +49,8 @@ crossing 50% midweek secures the climb.
 | Comeback | After 2 weeks in a row under 50%, the next climb is 2 stages. At most once in 8 weeks, so it cannot shorten the year. |
 | Steep line | Optional, chosen before anything is logged in the week; unlocked after 4 counted weeks. The climb bar rises to 70%. Reaching it earns a normal one-stage climb plus a 10% head start on next week's score. 50 to 69% on the steep line holds. |
 | Sick days | A day with every habit skipped as sick is *excused*: streaks hold, nothing is missed, the story does not advance, and the day leaves the week's plan. |
-| Rest-heavy weeks | 4 or more rested or excused days: the week can hold but not climb. |
+| Rest-heavy weeks | 4 or more rested or excused days: the week can hold but neither climb nor slip, and the next week's weather is calm. |
+| Neutral weeks | Fewer than 3 countable days (not rested or excused): shown as a rest week. Nothing moves; the weekly chain and comeback count are untouched. |
 | Floor | A slip never crosses the current chapter's base camp. |
 | Weekly chain | Consecutive weeks at 50% or more; rest weeks are neutral. |
 
@@ -65,3 +66,19 @@ crossing 50% midweek secures the climb.
 - The test matrix gains the cases in `tests/unit/weekly.test.ts` and a climb property in
   `tests/property/invariants.test.ts`.
 - Profile documents move to schema 2 (the steep-line choices); schema 1 profiles migrate.
+
+## Amendment, 2026-10-15
+
+Xander asked Claude to settle the five open questions from the speedrun reconciliation
+(`docs/audits/speedrun-brief-reconciliation.md`) on the evidence. Ill and rest-heavy weeks were
+landing as slips and storms; research on lapses (the abstinence-violation effect, self-compassion
+predicting recovery) says penalising a week the person could not live does not help them return.
+
+1. Neutral week: under 3 countable days, the week is not judged.
+2. A rest-heavy week cannot slip and is followed by calm weather (G-22 amended).
+3. Week screen: "Your rhythm", the median of the last up-to-4 judged weeks. Information only.
+4. Seasons follow the device time zone's hemisphere (cosmetic; no rule depends on it).
+5. The real web-app rebuild waits for a human pilot; the sim harness and e2e suite are its
+   parity check.
+
+The record format is unchanged; `WeekResult` gains derived `restDays` and `neutral`.

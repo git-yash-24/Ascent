@@ -269,6 +269,10 @@ export interface WeekResult {
   stageAfter: number;
   /** Head start earned for next week. */
   headstartOut: number;
+  /** Rested or excused days in the week so far. */
+  restDays?: number;
+  /** True when too few days were countable to judge the week (it shows as a rest week). */
+  neutral?: boolean;
 }
 
 export interface Climb {

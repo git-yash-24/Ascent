@@ -8,6 +8,7 @@
  */
 import { addDays, compareDateKeys, weekStart } from './model/date';
 import type { DateKey, Derived } from './model/types';
+import { CLIMB } from './habits/weekly';
 
 export interface Improvement {
   id: string;
@@ -77,6 +78,8 @@ export function weatherOf(d: Derived, today: DateKey): Weather {
   const last = [...d.climb.weeks].reverse().find((w) => compareDateKeys(w.week, mon) < 0);
   if (cur && cur.verdict !== 'rest' && (cur.verdict === 'climb' || cur.verdict === 'summit')) return 'clear';
   if (!last) return 'calm';
+  // A week mostly spent resting or ill never brings snow or storm: weather is not a verdict on rest.
+  if ((last.restDays ?? 0) >= CLIMB.restHeavyDays) return 'calm';
   switch (last.verdict) {
     case 'summit':
     case 'climb':
