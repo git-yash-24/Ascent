@@ -47,3 +47,11 @@ Each failure becomes a test before the fix (regression rule). Then the 14 days r
 Changes to the beta during M10 are allowed only if they keep the record format. The world, art,
 replay and presentation work of 13 and 14 Oct changed no stored schema; the per-device choices
 (light, shake) live in browser storage.
+
+## Speedrun (ten personas, 98 days each)
+
+Ten simulated people ran 98 days through the real Controller and sync layer (`npx vitest run --config vitest.sim.config.ts`) plus a 7-day warped UI run (`tests/sim/ui-speedrun.mjs`). Result: 0 entries lost or changed, round trips identical, devices agree. Every persona's verdict was "maybe".
+
+Fixed: second Mark-done sheet closing itself; restore dropping replay times; eastward-zone replays saying "logged later"; water counted as effort; "Moving" coach line and "WEEK 10%" caption (now pace); winter clear variety; southern-hemisphere seasons from the time zone.
+
+Open, needs a rules decision: whole-day rest/sick state excused from scores and weather (Jon, Kai); weekly verdict relative to own baseline; closing a day at a core subset; eastward zone-change day filing (needs zone per act, so after M10); text-size setting; replay card overflow.

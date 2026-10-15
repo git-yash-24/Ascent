@@ -16,6 +16,7 @@ import { backupDue, exportCsv, exportJson, backupFileName, prepareImport, type P
 import type { SyncedStore, StoreState } from '../data/store';
 import { checkDay, type TrialState } from '../data/trial';
 import type { KV } from '../data/sync/journal';
+import { appNow } from '../core/time/appClock';
 
 /**
  * Which of Ari's chores a habit becomes is the story's choice, made per scene so it stays
@@ -45,7 +46,7 @@ export interface Clock {
 }
 
 export const systemClock: Clock = {
-  now: () => Date.now(),
+  now: () => appNow(),
   zone: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 };
 

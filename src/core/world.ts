@@ -44,7 +44,12 @@ export function campState(storyDay: number): CampState {
  * day) brings it back to 0 at once: return never has to be earned.
  */
 export function momentumStep(d: Derived, today: DateKey): 0 | 1 | 2 | 3 {
-  const states = Object.values(d.days[today]?.states ?? {});
+  // Water is a tracker, not a habit of the plan: a glass is not showing up (speedrun finding:
+  // two missed days in a row left the fire burning because of a few glasses).
+  const water = d.water?.habit;
+  const states = Object.entries(d.days[today]?.states ?? {})
+    .filter(([id]) => id !== water)
+    .map(([, s]) => s);
   if (states.some((s) => s === 'fulfilled' || s === 'held' || s === 'attempted' || s === 'skipped')) return 0;
   let n = 0;
   for (let k = 1; k <= 60 && n < 3; k++) {

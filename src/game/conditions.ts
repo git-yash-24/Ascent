@@ -47,8 +47,15 @@ export interface Conditions {
 }
 
 /** Northern seasons by month at the world's latitude. */
+let southern = false;
+
+/** The calendar flips below the equator. Guessed from the device's time zone (no location is read). */
+export function setHemisphereFromZone(zone: string): void {
+  southern = /^(Australia\/|Pacific\/(Auckland|Fiji|Tongatapu|Apia)|Antarctica\/|America\/(Sao_Paulo|Argentina|Buenos_Aires|Santiago|Montevideo|Asuncion|La_Paz|Lima)|Africa\/(Johannesburg|Maputo|Harare|Windhoek|Lusaka|Gaborone)|Indian\/(Mauritius|Reunion))/.test(zone);
+}
+
 export function seasonOf(d: Date): Season {
-  const m = d.getMonth();
+  const m = southern ? (d.getMonth() + 6) % 12 : d.getMonth();
   return m < 2 || m === 11 ? 'winter' : m < 5 ? 'spring' : m < 8 ? 'summer' : 'autumn';
 }
 
@@ -66,7 +73,7 @@ export function kindFor(canon: Weather, season: Season, day: Date): Kind {
   const u = dayHash(day);
   switch (canon) {
     case 'clear':
-      return season === 'summer' ? pick<Kind>(['dry', 'dry', 'clear'], u) : season === 'autumn' ? pick<Kind>(['clear', 'clear', 'windy'], u) : 'clear';
+      return season === 'summer' ? pick<Kind>(['dry', 'dry', 'clear'], u) : season === 'autumn' ? pick<Kind>(['clear', 'clear', 'windy'], u) : season === 'winter' ? pick<Kind>(['clear', 'clear', 'cloudy'], u) : 'clear';
     case 'calm':
       return pick<Kind>(
         season === 'spring' ? ['cloudy', 'showers', 'clear', 'cloudy'] : season === 'summer' ? ['cloudy', 'clear', 'dull', 'dry'] : season === 'autumn' ? ['dull', 'fog', 'windy', 'cloudy'] : ['dull', 'cloudy', 'fog', 'clear'],

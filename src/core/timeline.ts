@@ -6,7 +6,7 @@
  * thing was done. So the replay says "logged later" when the record was made on another day,
  * and "time not recorded" when there is no time at all. Nothing is ever made up.
  */
-import { logicalDay, wallClock } from './model/date';
+import { compareDateKeys, logicalDay, wallClock } from './model/date';
 import type { Act, DateKey, Entry } from './model/types';
 
 export interface Moment {
@@ -14,19 +14,25 @@ export interface Moment {
   at: number | null;
   /** When it was first started, if that was earlier and different (a partial, then done). */
   started: number | null;
-  /** The day the record was made, when that is not the day itself (a backfill). */
+  /** The day the record was made, when that was after the day itself (a backfill). */
   loggedOn: DateKey | null;
+  /**
+   * True when the record time falls before the day in the record's time zone: it was made while
+   * travelling, in a zone ahead (found by the speedrun: a walk at 06:30 in Madrid is 23:30 the day
+   * before in Mexico City, and was wrongly called "logged later").
+   */
+  elsewhere: boolean;
 }
 
 /** The moment a habit-day settled, from its recorded changes. */
 export function momentOf(e: Entry | undefined, day: DateKey, timeZone: string, boundary: number): Moment {
   const acts = e?.acts ?? [];
-  if (!acts.length) return { at: null, started: null, loggedOn: null };
+  if (!acts.length) return { at: null, started: null, loggedOn: null, elsewhere: false };
   const last = acts[acts.length - 1]!;
   const first = acts[0]!;
   const started = acts.length > 1 && first.at < last.at && first.v !== last.v && first.v !== undefined && first.v > 0 ? first.at : null;
   const on = logicalDay(new Date(last.at), timeZone, boundary);
-  return { at: last.at, started, loggedOn: on === day ? null : on };
+  return { at: last.at, started, loggedOn: compareDateKeys(on, day) > 0 ? on : null, elsewhere: compareDateKeys(on, day) < 0 };
 }
 
 /**

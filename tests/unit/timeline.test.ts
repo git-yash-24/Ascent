@@ -9,7 +9,7 @@ const at = (iso: string): number => new Date(iso).getTime();
 describe('the moment a habit-day settled', () => {
   it('has no time when none was recorded (older entries)', () => {
     const e: Entry = { v: 1, at: at('2026-10-01T09:00:00+08:00'), dev: 'd' };
-    expect(momentOf(e, '2026-10-01', TZ, 240)).toEqual({ at: null, started: null, loggedOn: null });
+    expect(momentOf(e, '2026-10-01', TZ, 240)).toEqual({ at: null, started: null, loggedOn: null, elsewhere: false });
   });
 
   it('is the last recorded change, with the start when it was begun earlier', () => {
@@ -37,6 +37,14 @@ describe('the moment a habit-day settled', () => {
   it('counts a late night before the day boundary for the day itself', () => {
     const e: Entry = { v: 1, at: at('2026-10-15T01:30:00+08:00'), dev: 'd', acts: [{ at: at('2026-10-15T01:30:00+08:00'), v: 1 }] };
     expect(momentOf(e, '2026-10-14', TZ, 240).loggedOn).toBeNull();
+  });
+
+  it('does not call a record made in a zone ahead "logged later" (speedrun: Tomás in Madrid)', () => {
+    // 06:30 in Madrid on 27 Nov is 23:30 on 26 Nov in Mexico City, the record's zone.
+    const t = at('2026-11-27T06:30:00+01:00');
+    const m = momentOf({ v: 1, at: t, dev: 'd', acts: [{ at: t, v: 1 }] }, '2026-11-27', 'America/Mexico_City', 240);
+    expect(m.loggedOn).toBeNull();
+    expect(m.elsewhere).toBe(true);
   });
 });
 

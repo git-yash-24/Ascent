@@ -8,6 +8,7 @@ import { KINDS, SEASONS, type Kind, type Season } from './conditions';
 import { moonAge } from './sky';
 import { h } from '../ui/dom';
 import type { Stage } from './stage';
+import { appDate } from '../core/time/appClock';
 
 const cap = (x: string): string => x[0]!.toUpperCase() + x.slice(1);
 
@@ -36,7 +37,7 @@ function slider(id: string, label: string, min: number, max: number, step: numbe
 }
 
 export function labPanel(stage: Stage, onClose: () => void): HTMLElement {
-  const now = new Date();
+  const now = appDate();
   const live = now.getHours() + now.getMinutes() / 60;
   const p = stage.previewing;
 
@@ -59,7 +60,7 @@ export function labPanel(stage: Stage, onClose: () => void): HTMLElement {
     const wi = Number(weather.input.value);
     weather.out.textContent = wi === 0 ? `From the record (${c.kind})` : cap(KINDS[wi - 1]!);
     const m = Number(moon.input.value);
-    moon.out.textContent = m < 0 ? `Tonight: ${moonPhase(moonAge(new Date()))}` : `${moonPhase(m)} · day ${m.toFixed(1)}`;
+    moon.out.textContent = m < 0 ? `Tonight: ${moonPhase(moonAge(appDate()))}` : `${moonPhase(m)} · day ${m.toFixed(1)}`;
     summary.textContent = `${clock(hr)} · ${cap(c.season)} · ${cap(c.kind)}`;
   };
   time.input.addEventListener('input', () => {
@@ -108,7 +109,7 @@ export function labPanel(stage: Stage, onClose: () => void): HTMLElement {
   };
   reset.addEventListener('click', () => {
     clear();
-    time.input.value = String(new Date().getHours() + new Date().getMinutes() / 60);
+    time.input.value = String(appDate().getHours() + appDate().getMinutes() / 60);
     season.input.value = weather.input.value = '0';
     moon.input.value = '-1';
     show();

@@ -33,6 +33,7 @@ import { DAY_GAP, WeekTrail, YearRoute, YEAR_STAGES, type Anchor, type TrailDay 
 import { buildKit, symbolTexture, type Kit } from './kit';
 import type { DateKey, TrailSymbol } from '../core/model/types';
 import type { Weather } from '../core/world';
+import { appDate, warpState } from '../core/time/appClock';
 
 export type { Anchor, TrailDay };
 
@@ -124,7 +125,7 @@ export class Stage {
   private readonly hemi: THREE.HemisphereLight;
   private readonly rim: THREE.DirectionalLight;
   /** Today's weather, season and what follows from them (game/conditions.ts). */
-  private cond: Conditions = todaysConditions('calm', new Date());
+  private cond: Conditions = todaysConditions('calm', appDate());
   private kindOverride: Kind | null = null;
   /** A replay shows its own day: season, weather and the recorded hour of each moment. */
   private replay: { kind: Kind; season: Season; day: Date } | null = null;
@@ -662,7 +663,7 @@ export class Stage {
 
   /** Canon + season + date → conditions. Runs on a change and once a minute (the date rolls over). */
   private refreshConditions(): void {
-    const now = new Date();
+    const now = appDate();
     const season = this.replay?.season ?? this.seasonOverride ?? seasonOf(now);
     const kind = this.replay?.kind ?? this.kindOverride ?? kindFor(this.recordWeather, season, now);
     const prev = this.cond.kind + this.cond.season;
@@ -1467,7 +1468,7 @@ export class Stage {
    * (?hour= or the Lab override the clock for review; nothing here writes anything.)
    */
   private applyLight(dt: number): void {
-    const now = new Date();
+    const now = appDate();
     if (now.toDateString() !== this.condDay) this.refreshConditions();
     const c = this.cond;
     const previewing = this.kindOverride !== null || this.seasonOverride !== null || this.hourOverride !== null || this.replay !== null;
@@ -1564,7 +1565,9 @@ export class Stage {
     rimU.uSunV.value.copy(sun.dir).transformDirection(this.camera.matrixWorldInverse);
     this.horizon.update(this.clock, dt, look, sun.dir, farK);
     // Clouds, wind and the things the wind moves.
-    this.clouds.update(dt, c.cover, previewing ? 0.6 : 25, look, sun.dir, this.wind.dir, this.wind.strength);
+    // On simulated time a day passes in minutes, so weather settles in seconds.
+    const warp = warpState()?.speed ?? 1;
+    this.clouds.update(dt, c.cover, previewing ? 0.6 : Math.max(0.8, 25 / Math.sqrt(warp)), look, sun.dir, this.wind.dir, this.wind.strength);
     treeWind.wind.value.set(this.wind.dir.x, this.wind.dir.y).multiplyScalar(this.wind.strength * (this.reduced ? 0.3 : 1));
     treeWind.time.value = this.clock;
     this.camp.fire.wind = this.wind.dir.x * this.wind.strength;
@@ -1572,7 +1575,7 @@ export class Stage {
     this.sound.setDaylight(Math.max(0, Math.min(1, (sun.elev - 2) / 10)) * (1 - cover * 0.6) * (c.rain > 0 ? 0 : 1));
     // The ground: wet after rain, snow lying in winter, the season's colour. Eased, so a change
     // of weather arrives over a minute rather than at once (quickly in the Lab).
-    const tau = previewing ? 0.5 : 40;
+    const tau = previewing ? 0.5 : Math.max(0.8, 40 / Math.sqrt(warp));
     const ease1 = 1 - Math.exp(-dt / tau);
     this.wet += (c.wet - this.wet) * ease1;
     this.lying += (c.lying - this.lying) * ease1;

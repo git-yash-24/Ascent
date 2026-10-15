@@ -227,6 +227,9 @@ export function replaceWrites(current: Snapshot, incoming: Snapshot, now: number
         const w: Entry = { at: now, dev };
         if (e.v !== undefined) w.v = e.v;
         if (e.skip !== undefined) w.skip = e.skip;
+        // Keep when each change was recorded: a restore must not erase the record's times
+        // (found by the speedrun: every replay after a restore said "time not recorded").
+        if (e.acts?.length) w.acts = e.acts;
         writes.push({ date, habit, e: w });
       }
     }

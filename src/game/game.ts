@@ -27,6 +27,7 @@ import { Stage, type TrailDay } from './stage';
 import { TodaySheet } from './today';
 import { OptionsSheet } from './ui';
 import { MonthSheet, WeekSheet, weekDays, YearSheet } from './views';
+import { appNow, warpState } from '../core/time/appClock';
 
 export const SCREENS = ['camp', 'today', 'week', 'month', 'year'] as const;
 export type Screen = (typeof SCREENS)[number];
@@ -158,7 +159,7 @@ export class GameView {
     };
     for (const ev of ['pointerdown', 'keydown', 'wheel', 'touchstart', 'focusin']) window.addEventListener(ev, wake, { passive: true, capture: true });
     // Water due-ness (and her tiredness) moves with the clock, not only with the record.
-    window.setInterval(() => this.lastView && this.root.isConnected && this.renderFlask(this.lastView), 60_000);
+    window.setInterval(() => this.lastView && this.root.isConnected && this.renderFlask(this.lastView), warpState() ? 2000 : 60_000);
         // The Environment Lab (Setup → About, once unlocked).
     window.addEventListener('ascent:lab', () => this.showLab());
     wake();
@@ -224,7 +225,7 @@ export class GameView {
     } catch {
       last = null;
     }
-    const now = Date.now();
+    const now = appNow();
     if (last && last.day === v.today && now - last.at < 4 * 3600_000) return;
     // A real absence (most of a day, or missed days): the cup comes back to your place.
     // (A first visit on this device has nothing to come back from.)
@@ -477,12 +478,12 @@ export class GameView {
       this.flask.classList.add('gulp');
     }
     this.lastGlasses = w.today;
-    const due = waterDue(w, Date.now(), this.app.view().snapshot.profile?.settings.timeZone);
+    const due = waterDue(w, appNow(), this.app.view().snapshot.profile?.settings.timeZone);
     this.flask.dataset.due = String(due);
     this.flask.style.setProperty('--level', String(Math.min(1, w.today / Math.max(1, w.target))));
     // The tin shows what is left to drink today; the corner ring shows what you have had.
     this.stage?.setFlaskLevel(1 - w.today / Math.max(1, w.target));
-    this.stage?.setWater({ today: w.today, target: w.target, due, sinceMin: w.lastAt === null ? null : (Date.now() - w.lastAt) / 60_000 });
+    this.stage?.setWater({ today: w.today, target: w.target, due, sinceMin: w.lastAt === null ? null : (appNow() - w.lastAt) / 60_000 });
     (this.flask.querySelector('.flask-n') as HTMLElement).textContent = `${w.today}/${w.target}`;
     const ring = this.flask.querySelector('.flask-ring') as HTMLElement;
     if (ring.dataset.k !== `${w.today}/${w.target}`) {

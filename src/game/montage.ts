@@ -81,7 +81,11 @@ export function dayCards(v: View, date: DateKey): Card[] {
     const m = momentOf(e, date, tz, boundary);
     if (m.at === null) card.note = 'time not recorded';
     else if (m.loggedOn) card.note = `logged later, ${shortDate(m.loggedOn)}`;
-    else {
+    else if (m.elsewhere) {
+      // Recorded while away in another time zone: the time is real but in the record's zone.
+      card.time = clockOf(m.at, tz);
+      card.note = `recorded in another time zone (${tz.split('/').pop()?.replace(/_/g, ' ')} time)`;
+    } else {
       card.time = m.started ? `${clockOf(m.started, tz)} → ${clockOf(m.at, tz)}` : clockOf(m.at, tz);
       card.hour = hourOf(m.at, tz);
     }

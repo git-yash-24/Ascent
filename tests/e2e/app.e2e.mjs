@@ -392,6 +392,17 @@ await test('game: keyboard: Enter opens the options with the amount ready; Mark 
   assert((await page.evaluate(() => document.activeElement?.classList.contains('gchip'))), 'focus not returned after Escape');
 });
 
+await test('game: Mark done on one habit and straight away on the next (speedrun finding: the second sheet closed itself)', async (page) => {
+  await startGame(page);
+  for (const name of ['Review mistakes', 'Qbank']) {
+    await chip(page, name).focus();
+    await page.keyboard.press('Enter');
+    await page.locator('dialog.opts[open]').waitFor();
+    await page.locator('dialog.opts[open]').getByRole('button', { name: /^Mark done/ }).click({ timeout: 5000 });
+    assert((await chip(page, name).getAttribute('data-state')) === 'fulfilled', `${name} not done`);
+  }
+});
+
 await test('game: screens left to right are Camp, Today, Week, Month, Year', async (page) => {
   await startGame(page);
   const labels = await page.locator('.screen-btn').allTextContents();

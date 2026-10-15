@@ -2,6 +2,7 @@
  * Today's sheet: the compact part under the world (chips and the flask), and the organised
  * detail further down. Chips are keyed by habit and updated in place so focus survives saves.
  */
+import { diffDays, weekStart } from '../core/model/date';
 import { entryOn } from '../core/model/entries';
 import { versionOn } from '../core/habits/versions';
 import { CLIMB } from '../core/habits/weekly';
@@ -14,12 +15,16 @@ import { holdable } from './hold';
 import { campState, momentumStep, waterDue } from '../core/world';
 import { reducedMotion } from '../ui/motion';
 import { bar, dot, section, weekGauge, type OptionsSheet } from './ui';
+import { appNow } from '../core/time/appClock';
 
 const COACH: Record<string, string> = {
   empty: 'Embers from last night. One thing first.',
   first: 'The first morning. One thing, and she sets off.',
   cold: 'The fire is out. One thing relights it.',
-  partial: 'Moving. Keep the pace.',
+  partial: 'Moving. Whatever comes next counts.',
+  started: 'A start. The rest can come later.',
+  nearly: 'Nearly there. Camp is close.',
+  evening: 'What you did today counts. Rest when you need to.',
   closed: 'Camp is made. Ari takes the route.',
   rested: 'Rest is part of the climb.',
   excused: 'Get well. The mountain waits.',
@@ -104,11 +109,20 @@ export class TodaySheet {
     const d = v.derived;
     const day = d.days[v.today];
     const outcome = day?.outcome ?? 'free';
-    const anyLogged = Object.values(day?.states ?? {}).some((s) => s !== 'open' && s !== 'unscheduled' && s !== 'missed');
+    // Water is a tracker, not the plan: a glass alone is not "moving".
+    const anyLogged = Object.entries(day?.states ?? {}).some(([id, s]) => id !== d.water?.habit && s !== 'open' && s !== 'unscheduled' && s !== 'missed');
     const waiting = d.storyDayEarned === 0 ? COACH.first : momentumStep(d, v.today) >= 3 ? COACH.cold : COACH.empty;
-    const line = outcome === 'free' ? COACH.free : anyLogged ? COACH[outcome] ?? COACH.partial : waiting;
+    const hour = new Date(appNow()).getHours();
+    const progress = day?.progress ?? 0;
+    // The partial line follows the hour and how far along the day is, instead of one push all day.
+    const partial = progress >= 0.75 ? COACH.nearly : hour >= 20 || hour < 4 ? COACH.evening : hour < 11 ? COACH.started : COACH.partial;
+    const line = outcome === 'free' ? COACH.free : anyLogged ? (outcome === 'partial' || outcome === 'inProgress' ? partial : COACH[outcome] ?? partial) : waiting;
+    // A live week is a share of the whole week's plan, so midweek it looks low; show the pace too.
+    const score = d.climb.current?.score ?? 0;
+    const elapsed = (diffDays(weekStart(v.today), v.today) + 1) / 7;
+    const pace = score > 0 && elapsed < 1 ? ` · on pace for ${pct(Math.min(1, score / elapsed))}` : '';
     this.caption.replaceChildren(
-      h('span', { class: 'cap-day', text: `Trail day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(d.climb.current?.score ?? 0)}` }),
+      h('span', { class: 'cap-day', text: `Trail day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(score)}${pace}` }),
       h('span', { class: 'cap-line coach', text: line ?? '' }),
     );
   }
@@ -368,7 +382,7 @@ export class TodaySheet {
     this.water.hidden = !w;
     if (!w) return;
     const full = w.today >= w.target;
-    const due = waterDue(w, Date.now(), v.snapshot.profile?.settings.timeZone);
+    const due = waterDue(w, appNow(), v.snapshot.profile?.settings.timeZone);
     this.water.dataset.due = String(due);
     const cells = h('span', { class: 'flask-cells', 'aria-hidden': 'true' });
     for (let i = 0; i < w.target; i++) cells.append(h('span', { class: i < w.today ? 'fc on' : 'fc' }));

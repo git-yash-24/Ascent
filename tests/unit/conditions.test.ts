@@ -100,3 +100,13 @@ describe('the golden hour and the moon', () => {
     expect(sunAt(0, 286, 28, 14.77).moonElev).toBeGreaterThan(40);
   });
 });
+
+import { setHemisphereFromZone, seasonOf as seasonOfZ } from '../../src/game/conditions';
+describe('hemisphere', () => {
+  it('flips the seasons for southern zones', () => {
+    setHemisphereFromZone('Australia/Sydney');
+    expect(seasonOfZ(new Date(2026, 0, 15))).toBe('summer');
+    setHemisphereFromZone('Europe/Madrid');
+    expect(seasonOfZ(new Date(2026, 0, 15))).toBe('winter');
+  });
+});

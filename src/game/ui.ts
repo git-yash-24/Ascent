@@ -56,7 +56,13 @@ export class OptionsSheet {
 
   constructor() {
     this.el = h('dialog', { class: 'opts', 'aria-labelledby': 'opts-title' });
-    this.el.addEventListener('close', () => this.finish(null));
+    // The close event arrives later than the close itself (a task, and later still on a busy
+    // phone). When the sheet was closed by a choice and at once reopened for another habit, that
+    // late event must not close the new sheet (found by the speedrun: "Mark done" on one habit
+    // and straight away on another closed the second sheet under the finger).
+    this.el.addEventListener('close', () => {
+      if (!this.el.open) this.finish(null);
+    });
     // The click that ends the tap which opened the sheet lands on the sheet itself: swallow it,
     // or it would close the sheet or press whatever button is now under the finger.
     this.el.addEventListener(

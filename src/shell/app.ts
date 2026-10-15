@@ -15,6 +15,15 @@ import { SetupView, type Saver } from '../ui/setup/setup';
 import { welcome } from '../ui/welcome';
 import { setMotionSetting } from '../ui/motion';
 import { GameView, screenFromHash } from '../game/game';
+import { appNow, setWarp, skipAhead, warpFromUrl, warpState } from '../core/time/appClock';
+import { warpBar } from '../ui/warpBar';
+import { setHemisphereFromZone } from '../game/conditions';
+
+/** Every key a sandbox writes is kept apart from the real record's (`ascent:sandbox:` + key). */
+function prefixedKV(kv: KV | null, prefix: string): KV | null {
+  if (!kv) return null;
+  return { get: (k) => kv.get(prefix + k), set: (k, v) => kv.set(prefix + k, v), remove: (k) => kv.remove(prefix + k) };
+}
 
 declare global {
   interface Window {
@@ -64,11 +73,21 @@ async function capabilities(): Promise<{ backend: Backend | null; saver: Saver }
 }
 
 export async function boot(root: HTMLElement): Promise<void> {
-  const kv = browserKV();
+  // A speedrun (?warp=<speed>&from=<date>) or ?sandbox runs on simulated time in a separate,
+  // local-only record: nothing it writes can reach the real one.
+  const q = new URLSearchParams(location.search);
+  const sandboxKv = prefixedKV(browserKV(), 'ascent:sandbox:');
+  const resume = Number(sandboxKv?.get('warp:simAt') ?? NaN);
+  const warp = warpFromUrl(location.search, Number.isFinite(resume) ? resume : null);
+  const sandbox = warp !== null || q.has('sandbox');
+  const kv = sandbox ? sandboxKv : browserKV();
   const dev = deviceId(kv);
-  const { backend, saver } = await capabilities();
+  const caps = await capabilities();
+  const backend = sandbox ? null : caps.backend;
+  const saver = caps.saver;
   const store = new SyncedStore({ backend, kv, dev });
-  const app = new Controller(store, kv, dev);
+setHemisphereFromZone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  const app = new Controller(store, kv, dev, { now: appNow, zone: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
   window.__ascent = { tapToStored: [], app };
 
   const statusDot = h('span', { class: 'dot', 'aria-hidden': 'true' });
@@ -82,6 +101,13 @@ export async function boot(root: HTMLElement): Promise<void> {
   const header = h('header', { class: 'top' }, skip, h('span', { class: 'mark', text: 'Ascent' }), status, toGame, nav);
   const outlet = h('div', { class: 'outlet' });
   root.replaceChildren(header, outlet);
+  if (sandbox) {
+    document.body.dataset.sandbox = 'true';
+    if (warp) root.append(warpBar());
+    // Hooks for the speedrun scripts (sandbox only): pause, jump, read simulated time.
+    (window as unknown as { __warp: object }).__warp = { setWarp, skipAhead, appNow, warpState };
+    window.setInterval(() => kv?.set('warp:simAt', String(appNow())), 2000);
+  }
 
   let opened = false;
   const today = new TodayView(app);
@@ -166,7 +192,8 @@ export async function boot(root: HTMLElement): Promise<void> {
     // M10: once a day, the record is checked against yesterday's (nothing lost, nothing changed).
     if (opened) app.trialCheck(__APP_VERSION__);
   };
-  setInterval(check, 30_000);
+  // On simulated time the boundary comes round fast: look every second.
+  setInterval(check, warp ? 1000 : 30_000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') check();
   });
