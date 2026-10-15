@@ -27,6 +27,11 @@ export interface Climber {
   materials: THREE.MeshLambertMaterial[];
   /** Cloth that moves: the scarf's tails and the cape lift and swing with the wind and her movement. */
   flutter(t: number, wind: number, moving: number): void;
+  /**
+   * Where she looks, added on top of the pose: `yaw` and `pitch` in radians (head and eyes share
+   * it, the eyes leading), and how open her eyes are (0 shut to 1).
+   */
+  look(yaw: number, pitch: number, open: number): void;
 }
 
 /** Clothing colours per layer: coat, sleeves, hood. */
@@ -150,6 +155,16 @@ export function buildClimber(): Climber {
   const mouth = new THREE.Object3D();
   mouth.position.set(0, 0.06, 0.22);
   head.add(mouth);
+  // Her eyes: two warm points in the shadow of the hood. They blink, droop when she is tired
+  // and lead the head when something catches her attention.
+  const eyeMat = new THREE.MeshBasicMaterial({ color: '#f6ecd4' });
+  const eyes = grp(0, 0.1, 0.221);
+  for (const sx of [-1, 1]) {
+    const eye = ball(0.017, eyeMat, 0.78, 1.2, 0.35, 10, 8);
+    eye.position.x = sx * 0.04;
+    eyes.add(eye);
+  }
+  head.add(eyes);
   // Weather clothes, hidden until needed: a straw hat over the hood, a fur ruff, a rain cape.
   const straw = mat('#c9a86a');
   const sunHat = grp(0, 0.17, -0.01);
@@ -306,6 +321,14 @@ export function buildClimber(): Climber {
     },
     sample(keys: Keyframe[], t: number): Pose {
       return samplePose(keys, t);
+    },
+    look(yaw: number, pitch: number, open: number) {
+      head.rotation.y += yaw * 0.75;
+      head.rotation.x += pitch * 0.7;
+      neck.rotation.y += yaw * 0.25;
+      eyes.position.x = Math.max(-0.014, Math.min(0.014, yaw * 0.03));
+      eyes.position.y = 0.1 + Math.max(-0.01, Math.min(0.01, -pitch * 0.025));
+      eyes.scale.y = Math.max(0.08, open);
     },
     flutter(t: number, wind: number, moving: number) {
       const k = Math.min(1.2, wind * 0.9 + moving * 0.35);

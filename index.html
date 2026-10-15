@@ -236,6 +236,9 @@
 
       .game { position: relative; height: 100svh; }
       .world, .world-fallback { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+      /* The painted look's paper: a cold-pressed grain and a soft vignette over the world. */
+      .paper { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(125% 95% at 50% 46%, transparent 58%, rgba(20, 14, 30, 0.34) 100%), var(--paper, none); background-size: 100% 100%, 160px 160px; mix-blend-mode: soft-light; opacity: 0.55; }
+      .world[hidden] + .paper { display: none; }
       .world-fallback { background: radial-gradient(120% 70% at 30% 75%, #d8875a 0, #4a3a5c 45%, #141a33 100%); }
       .world-fallback::after { content: ''; position: absolute; inset: 30% 0 0; background: #2a2833; clip-path: polygon(0 100%, 0 60%, 18% 30%, 30% 48%, 46% 8%, 62% 42%, 74% 28%, 100% 62%, 100% 100%); }
       .shade { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(6, 8, 12, 0) 45%, rgba(6, 8, 12, .38) 100%), rgba(6, 8, 12, calc(var(--lift, 0) * .3)); }

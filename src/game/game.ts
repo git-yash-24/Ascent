@@ -14,6 +14,7 @@ import type { Accent, DateKey, Entry, TrailSymbol } from '../core/model/types';
 import { campState, momentumStep, waterDue, weatherOf } from '../core/world';
 import { ACCENTS } from './kit';
 import { markPicker } from './onboard';
+import { paperOverlay } from './style';
 import { labPanel } from './lab';
 import { onMotionChange, reducedMotion, scrollBehavior, setMotionSetting } from '../ui/motion';
 import { listenShake, onWorldPrefs, worldPrefs } from '../ui/worldPrefs';
@@ -148,7 +149,7 @@ export class GameView {
     });
 
     const shade = h('div', { class: 'shade', 'aria-hidden': 'true' });
-    this.root = h('div', { class: 'game' }, this.canvas, this.fallback, shade, this.labels, nav, this.pager, this.flask, this.reel, this.announce, opts.el, this.flaskMenu);
+    this.root = h('div', { class: 'game' }, this.canvas, paperOverlay(), this.fallback, shade, this.labels, nav, this.pager, this.flask, this.reel, this.announce, opts.el, this.flaskMenu);
     // The HUD steps out of the picture after a few seconds without input, like a game's HUD
     // between actions. The first touch only brings it back: hidden controls take no touches,
     // so that touch lands on the world and can never press a button it could not see.

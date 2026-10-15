@@ -18,7 +18,7 @@ import { buildWorld, glowTexture, groundHeight, pathX, patchMaterial, treeWind, 
 import { dayOfYear, moonAge, skyFor, sunAt, Wind, LATITUDE } from './sky';
 import { goldenOf, outfitFor, shelterFor, showerPulse, todaysConditions, conditionsFor, kindFor, seasonOf, type Conditions, type Kind, type Season } from './conditions';
 import { Air, Bolt, Puddles, Rain, Shafts } from './weather';
-import { Meadow } from './meadow';
+import { Meadow, bloom } from './meadow';
 import { Carry, Shelter, rimU, sunKiss } from './ari';
 import { onWorldPrefs, worldPrefs } from '../ui/worldPrefs';
 import { Clouds } from './clouds';
@@ -34,6 +34,12 @@ import { buildKit, symbolTexture, type Kit } from './kit';
 import type { DateKey, TrailSymbol } from '../core/model/types';
 import type { Weather } from '../core/world';
 import { appDate, warpState } from '../core/time/appClock';
+import { installStyle, soften } from './style';
+import { dressCamp, type CampDress } from './campdress';
+import { Fauna } from './fauna';
+
+// The painted look is one shading model for the whole world; installed before anything compiles.
+installStyle();
 
 export type { Anchor, TrailDay };
 
@@ -197,6 +203,13 @@ export class Stage {
   private recordWeather: Weather = 'calm';
   /** Frame time, smoothed (ms), for the Lab's readout. */
   frameMs = 16;
+  private readonly dress: CampDress;
+  private readonly fauna: Fauna;
+  /** Where her eyes are: current yaw/pitch, the target, and the next idle glance. */
+  private gaze = { yaw: 0, pitch: 0, wantYaw: 0, wantPitch: 0, next: 2, blinkAt: 3 };
+  private exposure = 1.12;
+  private lampGlow: THREE.Sprite | null = null;
+  private lampLight: THREE.PointLight | null = null;
   /** Phase 3: one wind, one cloud layer, the sun's state for this frame. */
   readonly wind = new Wind();
   private readonly clouds: Clouds;
@@ -320,9 +333,13 @@ export class Stage {
     this.journal.pencil.visible = false;
     this.holster();
     this.kit = buildKit(this.scene);
+    this.dress = dressCamp(this.scene, this.camp.group.children[1]);
+    this.fauna = new Fauna(this.scene);
+    // Organic things take the painted soft shading; stones keep their own weld.
+    for (const o of [this.climber.root, this.climber.satchel, this.camp.group, this.kit.group, this.flask, this.journal.group]) soften(o);
     this.seat();
     // Weather on everything that stands in the world: snow settles on what faces up, rain darkens it.
-    for (const root of [...this.camp.group.children.filter((o) => o !== this.camp.fire.group), this.kit.group]) {
+    for (const root of [...this.camp.group.children.filter((o) => o !== this.camp.fire.group), this.kit.group, this.dress.group]) {
       root.traverse((o) => {
         const m = (o as THREE.Mesh).material;
         if (m instanceof THREE.MeshLambertMaterial && !m.userData.patched) patchMaterial(m, { snow: 1 });
@@ -1544,7 +1561,7 @@ export class Stage {
     const key = this.lastLight;
     // With the moon down the night still has starlight: a faint, cool light from high overhead.
     const moonLight = look.moonI * (1 - cover * 0.7) * moonUp * (0.25 + 0.75 * sun.moonLit);
-    const starlight = 0.2 * (1 - cover * 0.5);
+    const starlight = 0.32 * (1 - cover * 0.5);
     const dir = sunUp ? sun.dir : moonLight > starlight ? sun.moon : SKYGLOW;
     const at = this.climber.root.position;
     key.target.position.copy(at);
@@ -1583,6 +1600,9 @@ export class Stage {
     weatherFx.snow.value = this.lying;
     weatherFx.grow.value = 1 - clamp01(this.lying * 1.2) * 0.85;
     this.meadow.setSeason(c.season);
+    // Flowers open with the morning and fold up at dusk and in the rain.
+    const openWant = clamp01((sun.elev + 2) / 8) * (1 - c.rain * 0.8) * (1 - c.snow * 0.5);
+    bloom.uOpen.value += (openWant - bloom.uOpen.value) * (1 - Math.exp(-dt / (previewing ? 0.6 : 6)));
     weatherFx.tint.value.lerp(SEASON_TINT[c.season], ease1);
     this.forest.bushes.color.lerp(BUSH[c.season], ease1);
     this.puddles.update(this.wet * (1 - this.lying), look.horizon.clone().lerp(look.zenith, 0.4));
@@ -1592,7 +1612,7 @@ export class Stage {
     // God rays across camp in the golden hour, when the camp is in view.
     const beamI = this.golden * Math.pow(1 - cover, 1.5) * (1 - clamp01(this.view - 1.3)) * 0.16 * (1 - c.fog);
     this.shafts.update(this.clock, at, this.camera.position, sun.dir, look.sun, beamI);
-    this.renderer.toneMappingExposure = 1.12 + this.golden * 0.08 + flash * 0.45;
+    this.exposure = 1.12 + this.golden * 0.08 + flash * 0.45;
   }
 
   /** Rain, snow and the fair-weather motes, around the camera (fireflies over the meadow). */
@@ -1793,6 +1813,69 @@ export class Stage {
     return { shot: cut, cut: isNew };
   }
 
+  /**
+   * Her eyes and head between the poses: she blinks, glances about now and then, follows a
+   * butterfly or a rabbit when one comes by, and her eyelids grow heavy when she is tired. Only
+   * while she is sitting at camp and nothing else is directing her.
+   */
+  private lookAround(dt: number): void {
+    const g = this.gaze;
+    const c = this.climber;
+    const free = this.phase === 'sit' && !this.acts.length && !this.intro && !this.montage && !this.reduced;
+    if (free) {
+      const head = new THREE.Vector3();
+      c.joints.head.getWorldPosition(head);
+      const seen = this.fauna.interest(head);
+      if (seen) {
+        // Into her own frame: yaw about her facing, pitch up or down to it.
+        const to = seen.sub(head);
+        const facing = c.root.rotation.y;
+        const local = to.clone().applyAxisAngle(UP, -facing);
+        g.wantYaw = THREE.MathUtils.clamp(Math.atan2(local.x, local.z), -0.9, 0.9);
+        g.wantPitch = THREE.MathUtils.clamp(-Math.atan2(local.y, Math.hypot(local.x, local.z)), -0.5, 0.4);
+      } else if (this.clock > g.next) {
+        // An idle glance: at the fire, out across the meadow, up at the sky, back to you.
+        const r = Math.random();
+        g.wantYaw = r < 0.4 ? 0 : (Math.random() - 0.5) * 1.1;
+        g.wantPitch = r < 0.25 ? 0.25 : this.night > 0.6 && r > 0.85 ? -0.35 : (Math.random() - 0.5) * 0.15;
+        g.next = this.clock + 2.5 + Math.random() * 5;
+      }
+    } else {
+      g.wantYaw = 0;
+      g.wantPitch = 0;
+    }
+    const k = 1 - Math.exp(-dt * (free ? 3.2 : 6));
+    g.yaw += (g.wantYaw - g.yaw) * k;
+    g.pitch += (g.wantPitch - g.pitch) * k;
+    // Blinks every few seconds, now and then a double; slower and heavier when tired.
+    if (this.clock > g.blinkAt + 0.16) g.blinkAt = this.clock + 2.2 + Math.random() * 4 - (Math.random() < 0.2 ? 2 : 0);
+    const bt = this.clock - g.blinkAt;
+    const blink = bt >= 0 && bt < 0.16 ? Math.sin((bt / 0.16) * Math.PI) : 0;
+    const open = (1 - blink) * (1 - this.fatigue * 0.45);
+    c.look(this.reduced ? 0 : g.yaw, this.reduced ? 0 : g.pitch, open);
+  }
+
+  /** The camp lantern (once built): lit from dusk to dawn, with a little real light of its own. */
+  private lightLantern(): void {
+    const lamp = this.kit.group.getObjectByName('lamp') as THREE.Mesh | undefined;
+    if (!lamp) return;
+    const on = lamp.parent?.visible ? clamp01((this.night - 0.15) / 0.5) : 0;
+    if (!this.lampGlow) {
+      this.lampGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: '#ffc27a', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+      this.lampGlow.scale.setScalar(0.9);
+      this.lampLight = new THREE.PointLight('#ffb066', 0, 5, 1.8);
+      this.scene.add(this.lampGlow, this.lampLight);
+    }
+    const p = lamp.getWorldPosition(new THREE.Vector3());
+    const flick = 0.9 + 0.1 * Math.sin(this.clock * 7.1) * Math.sin(this.clock * 4.3 + 1);
+    this.lampGlow.position.copy(p);
+    this.lampGlow.material.opacity = on * 0.6 * flick;
+    this.lampGlow.visible = on > 0.01;
+    this.lampLight!.position.copy(p);
+    this.lampLight!.intensity = on * 1.4 * flick;
+    (lamp.material as THREE.MeshLambertMaterial).emissiveIntensity = 0.25 + on * 1.2;
+  }
+
   private frame(nowMs: number): void {
     if (!this.running) return;
     this.raf = requestAnimationFrame((t) => this.frame(t));
@@ -1819,7 +1902,23 @@ export class Stage {
     this.breathPhase += dt * ((Math.PI * 2) / (3.8 - this.fatigue * 1.3));
     c.overlay(this.clock, cold, !this.reduced, this.breathPhase, this.fatigue);
     if (!this.reduced) c.flutter(this.clock, this.wind.strength, this.phase === 'walk' ? 1 : 0);
+    this.lookAround(dt);
     this.tendWeather(dt);
+    this.dress.update(this.clock, dt, this.night, this.camp.fire.wind, this.camp.fire.level);
+    this.fauna.update({
+      t: this.clock,
+      dt,
+      elev: this.sunElev,
+      season: this.cond.season,
+      rain: this.cond.rain,
+      snow: this.cond.snow,
+      wind: this.wind.strength,
+      cold: this.cond.cold,
+      far: clamp01((this.view - 1.2) / 1.2),
+      reduced: this.reduced || !!this.intro || !!this.montage,
+      ari: c.root.position.clone().setY(c.root.position.y + 1.2),
+    });
+    this.lightLantern();
     this.kit.update(this.clock, this.wind.strength);
     // Keep the flask where this screen can see it (not while it is in her hand).
     if (this.flaskAt !== 'hand' && this.flask.parent !== this.climber.joints.elbowR) {
@@ -1876,7 +1975,7 @@ export class Stage {
       if (u >= 1) this.reliefT = -1;
     } else this.relief.material.opacity = 0;
     const glow = this.reliefT >= 0 ? Math.sin(clamp01(this.reliefT / 1.6) * Math.PI) : 0;
-    this.renderer.toneMappingExposure = 1.12 + glow * 0.16;
+    this.renderer.toneMappingExposure = this.exposure + glow * 0.16;
     this.hemi.intensity = this.hemiBase + glow * 0.35;
 
     // Breath when cold, more often after the climb.

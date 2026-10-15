@@ -100,13 +100,16 @@ interface Stop {
 }
 // By sun elevation: night, blue hour, the golden horizon, low sun, full day.
 const STOPS: Stop[] = [
-  { at: -18, zenith: '#070c1c', mid: '#121a3a', horizon: '#252e55', fog: '#161c30', hemiSky: '#3a4380', hemiGround: '#12100d', hemi: 0.95, sun: '#8fa4d8', sunI: 0, stars: 0.95, cloudLit: '#2a3046', cloudShade: '#11141f' },
-  { at: -7, zenith: '#0f1736', mid: '#28366a', horizon: '#6a5f8e', fog: '#2c3050', hemiSky: '#4a5590', hemiGround: '#15120f', hemi: 0.95, sun: '#c78ab0', sunI: 0, stars: 0.55, cloudLit: '#6d5f8f', cloudShade: '#262a45' },
-  { at: -1, zenith: '#1d2552', mid: '#6a4a72', horizon: '#ff8a4c', fog: '#7a5a5c', hemiSky: '#a888a8', hemiGround: '#4e3420', hemi: 1.5, sun: '#ff9248', sunI: 1.0, stars: 0.12, cloudLit: '#ffa060', cloudShade: '#5a3a50' },
+  // Night (art direction): deep teal-blue, never black; the ground keeps a moss-dark green so
+  // shapes still read by moon and starlight, and warm lights (fire, lamp, candle) sing against it.
+  { at: -18, zenith: '#08122c', mid: '#13284c', horizon: '#24456a', fog: '#16263c', hemiSky: '#4a68a4', hemiGround: '#18221e', hemi: 1.1, sun: '#8fa4d8', sunI: 0, stars: 0.95, cloudLit: '#2e4060', cloudShade: '#121c30' },
+  { at: -7, zenith: '#10204a', mid: '#2c4478', horizon: '#7a6a9c', fog: '#2e3a5a', hemiSky: '#5a6aa8', hemiGround: '#1c1e1c', hemi: 1.05, sun: '#c78ab0', sunI: 0, stars: 0.55, cloudLit: '#7a6a9a', cloudShade: '#2a3050' },
+  { at: -1, zenith: '#22305e', mid: '#7a5a82', horizon: '#ff9a5a', fog: '#8a6a68', hemiSky: '#b094b0', hemiGround: '#523a26', hemi: 1.5, sun: '#ff9a50', sunI: 1.0, stars: 0.12, cloudLit: '#ffb070', cloudShade: '#6a4a68' },
   // The golden hour: low, saturated, honey-coloured light that throws long shadows.
-  { at: 5, zenith: '#4a6a9c', mid: '#e8c08a', horizon: '#ffbc58', fog: '#d8a868', hemiSky: '#e8bc88', hemiGround: '#6a4a28', hemi: 1.7, sun: '#ffb040', sunI: 1.32, stars: 0, cloudLit: '#ffd28a', cloudShade: '#9a7880' },
-  { at: 13, zenith: '#2f5590', mid: '#8fa6c4', horizon: '#ead2b0', fog: '#9aa0a8', hemiSky: '#aab2cc', hemiGround: '#4a3a28', hemi: 1.55, sun: '#ffe2b0', sunI: 1.15, stars: 0, cloudLit: '#fff0dc', cloudShade: '#8e92a6' },
-  { at: 25, zenith: '#335b93', mid: '#7fa6cc', horizon: '#cfdce4', fog: '#8d9fb2', hemiSky: '#a9bbd8', hemiGround: '#463b2c', hemi: 1.5, sun: '#fff0d8', sunI: 1.0, stars: 0, cloudLit: '#ffffff', cloudShade: '#a7b3c4' },
+  { at: 5, zenith: '#4f76a8', mid: '#ecc896', horizon: '#ffc670', fog: '#dcb07a', hemiSky: '#ecc494', hemiGround: '#6e5030', hemi: 1.7, sun: '#ffb44a', sunI: 1.32, stars: 0, cloudLit: '#ffdc9c', cloudShade: '#a88894' },
+  { at: 13, zenith: '#3a68a6', mid: '#98b8d4', horizon: '#f0dcbc', fog: '#a8b0b4', hemiSky: '#b4c2d6', hemiGround: '#544430', hemi: 1.55, sun: '#ffe6b8', sunI: 1.15, stars: 0, cloudLit: '#fff6e6', cloudShade: '#9ea4c0' },
+  // Full day: a painted, slightly turquoise blue over a warm cream horizon.
+  { at: 25, zenith: '#3a6fa8', mid: '#86b6d6', horizon: '#e4e6d6', fog: '#a4b8c4', hemiSky: '#b4c8dc', hemiGround: '#544a34', hemi: 1.5, sun: '#fff2dc', sunI: 1.0, stars: 0, cloudLit: '#fffaf0', cloudShade: '#a6aec8' },
 ];
 
 const smooth = (x: number): number => {

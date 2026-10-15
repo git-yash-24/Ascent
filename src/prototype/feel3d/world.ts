@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { fbm, mulberry32 } from '../shared/noise';
+import { stoneGeometry } from '../../game/style';
 
 /** Where the route runs: a gentle S through the foothills, rising toward the mountain (-z). */
 export function pathX(z: number): number {
@@ -42,13 +43,16 @@ export function groundHeight(x: number, z: number): number {
   return 200 + ceiling * (1 - Math.exp(-(out - 200) / ceiling));
 }
 
+// The painted palette (docs/design/art-direction.md): olive and sage meadow with lush blotches,
+// warm ochre where it is dry, lavender-grey stone, a warm earth path.
 const COL = {
-  grassLow: new THREE.Color('#4c5332'),
-  grassDry: new THREE.Color('#6f6338'),
-  rock: new THREE.Color('#5a5650'),
-  dirt: new THREE.Color('#5b4636'),
-  snow: new THREE.Color('#d9dde4'),
-  forest: new THREE.Color('#2c3826'),
+  grassLow: new THREE.Color('#5b6a38'),
+  grassDry: new THREE.Color('#968449'),
+  lush: new THREE.Color('#47703a'),
+  rock: new THREE.Color('#7b7470'),
+  dirt: new THREE.Color('#7a5a40'),
+  snow: new THREE.Color('#e4e9f0'),
+  forest: new THREE.Color('#34492e'),
 };
 
 function buildTerrain(): THREE.Mesh {
@@ -63,8 +67,9 @@ function buildTerrain(): THREE.Mesh {
     const z = pos.getZ(i);
     pos.setY(i, groundHeight(x, z));
   }
-  const flat = geo.toNonIndexed();
-  flat.computeVertexNormals();
+  // Smooth, painted ground: normals from the shared grid, colour per vertex in soft blotches.
+  geo.computeVertexNormals();
+  const flat = geo;
   const fp = flat.attributes.position as THREE.BufferAttribute;
   const fn = flat.attributes.normal as THREE.BufferAttribute;
   const colors = new Float32Array(fp.count * 3);
@@ -72,25 +77,23 @@ function buildTerrain(): THREE.Mesh {
   const snowK = new Float32Array(fp.count);
   const c = new THREE.Color();
   const rnd = mulberry32(7);
-  for (let i = 0; i < fp.count; i += 3) {
-    const cx = (fp.getX(i) + fp.getX(i + 1) + fp.getX(i + 2)) / 3;
-    const cz = (fp.getZ(i) + fp.getZ(i + 1) + fp.getZ(i + 2)) / 3;
-    const ny = (fn.getY(i) + fn.getY(i + 1) + fn.getY(i + 2)) / 3;
-    const steep = 1 - ny;
-    c.copy(COL.grassLow).lerp(COL.grassDry, fbm(cx * 0.05, cz * 0.05, 2) * 1.2 + rnd() * 0.15);
-    if (steep > 0.22) c.lerp(COL.rock, THREE.MathUtils.smoothstep(steep, 0.22, 0.45));
+  for (let i = 0; i < fp.count; i++) {
+    const cx = fp.getX(i);
+    const cz = fp.getZ(i);
+    const steep = 1 - fn.getY(i);
+    c.copy(COL.grassLow).lerp(COL.grassDry, THREE.MathUtils.clamp(fbm(cx * 0.05, cz * 0.05, 2) * 1.3 - 0.2 + rnd() * 0.08, 0, 1));
+    c.lerp(COL.lush, THREE.MathUtils.smoothstep(fbm(cx * 0.14 + 31, cz * 0.14 + 17, 2), 0.5, 0.72) * 0.75);
+    if (steep > 0.18) c.lerp(COL.rock, THREE.MathUtils.smoothstep(steep, 0.18, 0.42));
     const dp = Math.abs(cx - pathX(cz));
-    if (dp < 1.1 && cz < 160) c.lerp(COL.dirt, 1 - dp / 1.1);
-    if (Math.hypot(cx, cz) < 3.2) c.lerp(COL.dirt, 0.7);
-    const sk = dp < 1.1 && cz < 160 ? 0.25 : Math.hypot(cx, cz) < 2.2 ? 0 : 0.75 + 0.25 * fbm(cx * 0.2, cz * 0.2, 2);
-    for (let k = 0; k < 3; k++) {
-      colors.set([c.r, c.g, c.b], (i + k) * 3);
-      snowK[i + k] = sk;
-    }
+    if (dp < 1.3 && cz < 160) c.lerp(COL.dirt, THREE.MathUtils.smoothstep(1.3 - dp, 0, 0.9));
+    const camp = Math.hypot(cx, cz);
+    if (camp < 3.4) c.lerp(COL.dirt, 0.65 * THREE.MathUtils.smoothstep(3.4 - camp, 0, 1.6));
+    colors.set([c.r, c.g, c.b], i * 3);
+    snowK[i] = dp < 1.1 && cz < 160 ? 0.25 : camp < 2.2 ? 0 : 0.75 + 0.25 * fbm(cx * 0.2, cz * 0.2, 2);
   }
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   flat.setAttribute('aSnow', new THREE.BufferAttribute(snowK, 1));
-  const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   patchMaterial(groundMat, { snow: 1, tint: true, mask: true });
   const mesh = new THREE.Mesh(flat, groundMat);
   mesh.receiveShadow = true;
@@ -102,13 +105,14 @@ function buildTrees(clear = 11): THREE.Group {
   const g = new THREE.Group();
   const trunkGeo = new THREE.CylinderGeometry(0.08, 0.12, 1, 5);
   trunkGeo.translate(0, 0.5, 0);
-  const crownGeo = new THREE.ConeGeometry(0.9, 2.6, 6);
-  crownGeo.translate(0, 2.2, 0);
-  const crown2 = new THREE.ConeGeometry(0.65, 1.8, 6);
-  crown2.translate(0, 3.2, 0);
+  // Painted pines: soft tiers that flare at the skirt, like brush-stroked cones.
+  const crownGeo = new THREE.ConeGeometry(1.0, 2.4, 9, 2);
+  crownGeo.translate(0, 2.0, 0);
+  const crown2 = new THREE.ConeGeometry(0.72, 1.9, 9, 2);
+  crown2.translate(0, 3.15, 0);
   const count = 340;
-  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: '#3b2c22', flatShading: true }), count);
-  const crownMat = new THREE.MeshLambertMaterial({ color: '#28372c', flatShading: true });
+  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: '#4a3526' }), count);
+  const crownMat = new THREE.MeshLambertMaterial({ color: '#30503a' });
   // Crowns sway in the shared wind: bent in world space by height, each tree on its own phase.
   swayInWind(crownMat, 1.0, 0.035, 1);
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, count);
@@ -143,9 +147,9 @@ function buildTrees(clear = 11): THREE.Group {
 }
 
 function buildRocks(): THREE.InstancedMesh {
-  const geo = new THREE.DodecahedronGeometry(0.5, 0);
-  const count = 120;
-  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color: '#6b665e', flatShading: true }), count);
+  const geo = stoneGeometry(5, '#5d6c3a', '#857d76', 1);
+  const count = 150;
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }), count);
   const rnd = mulberry32(5);
   const m = new THREE.Matrix4();
   const e = new THREE.Euler();
@@ -158,7 +162,7 @@ function buildRocks(): THREE.InstancedMesh {
     if (Math.abs(x - pathX(z)) < 1.6) continue;
     if (Math.hypot(x, z) < 3.6) continue;
     const sc = 0.25 + rnd() * rnd() * 2.2;
-    e.set(rnd() * 3, rnd() * 3, rnd() * 3);
+    e.set((rnd() - 0.5) * 0.4, rnd() * 6.3, (rnd() - 0.5) * 0.4);
     q.setFromEuler(e);
     m.compose(new THREE.Vector3(x, groundHeight(x, z) + sc * 0.15, z), q, new THREE.Vector3(sc, sc * 0.7, sc));
     mesh.setMatrixAt(n++, m);
@@ -199,22 +203,34 @@ function buildMountains(): { group: THREE.Group; summit: THREE.Vector3 } {
   geo.translate(-60, 0, -860);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) pos.setY(i, rangeHeight(pos.getX(i), pos.getZ(i)));
-  const flat = geo.toNonIndexed();
-  flat.computeVertexNormals();
+  geo.computeVertexNormals();
+  const flat = geo;
   const fp = flat.attributes.position as THREE.BufferAttribute;
+  const fn = flat.attributes.normal as THREE.BufferAttribute;
   const colors = new Float32Array(fp.count * 3);
   const c = new THREE.Color();
-  for (let i = 0; i < fp.count; i += 3) {
-    const y = (fp.getY(i) + fp.getY(i + 1) + fp.getY(i + 2)) / 3;
+  const stone = new THREE.Color('#58607a');
+  const shade = new THREE.Color('#3e4560');
+  for (let i = 0; i < fp.count; i++) {
+    const y = fp.getY(i);
     const x = fp.getX(i);
     const z = fp.getZ(i);
-    const snowLine = 150 + (fbm(x * 0.02, z * 0.02, 2) - 0.5) * 50;
-    c.set('#3b404d');
-    if (y > snowLine) c.lerp(COL.snow, Math.min(0.9, (y - snowLine) / 40));
-    for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (i + k) * 3);
+    // Snow holds on the gentler faces, so ridges and gullies show as painted strokes of rock.
+    const snowLine = 140 + (fbm(x * 0.02, z * 0.02, 2) - 0.5) * 60;
+    const gentle = THREE.MathUtils.smoothstep(fn.getY(i), 0.45, 0.8);
+    c.copy(stone).lerp(shade, fbm(x * 0.01 + 4, z * 0.01, 2) * 0.8);
+    if (y > snowLine) c.lerp(COL.snow, Math.min(0.95, ((y - snowLine) / 35) * (0.35 + gentle * 0.65)));
+    colors.set([c.r, c.g, c.b], i * 3);
   }
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  g.add(new THREE.Mesh(flat, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
+  // The range keeps its form through the haze: fog is applied at half strength, so it reads as
+  // painted aerial perspective rather than a pale cut-out.
+  const rangeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  rangeMat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', '#ifdef USE_FOG\n float fogFactor = smoothstep( fogNear, fogFar, vFogDepth ) * 0.55;\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif');
+  };
+  rangeMat.customProgramCacheKey = () => 'range-haze';
+  g.add(new THREE.Mesh(flat, rangeMat));
   const summit = new THREE.Vector3(AMBAR.x, rangeHeight(AMBAR.x, AMBAR.z) - 8, AMBAR.z + 14);
   return { group: g, summit };
 }
@@ -243,17 +259,17 @@ function buildMidlands(): THREE.Mesh {
     const inside = Math.abs(x) < 172 && z < 152 && z > -192;
     pos.setY(i, inside ? groundHeight(x, z) - 3 : heightAt(x, z));
   }
-  const flat = geo.toNonIndexed();
-  flat.computeVertexNormals();
+  geo.computeVertexNormals();
+  const flat = geo;
   const fp = flat.attributes.position as THREE.BufferAttribute;
   const fn = flat.attributes.normal as THREE.BufferAttribute;
   const colors = new Float32Array(fp.count * 3);
   const c = new THREE.Color();
-  for (let i = 0; i < fp.count; i += 3) {
-    const cx = (fp.getX(i) + fp.getX(i + 1) + fp.getX(i + 2)) / 3;
-    const cz = (fp.getZ(i) + fp.getZ(i + 1) + fp.getZ(i + 2)) / 3;
-    const cy = (fp.getY(i) + fp.getY(i + 1) + fp.getY(i + 2)) / 3;
-    const ny = (fn.getY(i) + fn.getY(i + 1) + fn.getY(i + 2)) / 3;
+  for (let i = 0; i < fp.count; i++) {
+    const cx = fp.getX(i);
+    const cz = fp.getZ(i);
+    const cy = fp.getY(i);
+    const ny = fn.getY(i);
     c.copy(COL.grassLow).lerp(COL.grassDry, fbm(cx * 0.03, cz * 0.03, 2));
     // Rock on steep faces; height alone only greys it a little, so the high shoulders stay
     // land (grass, dark forest floor) seen from above, not a pale slab.
@@ -262,10 +278,10 @@ function buildMidlands(): THREE.Mesh {
     // Snow only on the high shoulders, patchy, so the walls read as land from above.
     const snowLine = 345 + (fbm(cx * 0.01 + 2, cz * 0.01, 2) - 0.5) * 70;
     if (cy > snowLine) c.lerp(COL.snow, Math.min(0.6, (cy - snowLine) / 60));
-    for (let k = 0; k < 3; k++) colors.set([c.r, c.g, c.b], (i + k) * 3);
+    colors.set([c.r, c.g, c.b], i * 3);
   }
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-  const midMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const midMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   patchMaterial(midMat, { snow: 0.9, tint: true });
   const mesh = new THREE.Mesh(flat, midMat);
   mesh.receiveShadow = false;
