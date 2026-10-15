@@ -403,6 +403,26 @@ await test('game: Mark done on one habit and straight away on the next (speedrun
   }
 });
 
+await test('game: "Today is different" rests the open habits in one step, keeps the ones you pick, and Undo all puts them back', async (page) => {
+  await startGame(page);
+  await hold(page, chip(page, 'Qbank'), 850);
+  await page.locator('#plan-toggle').scrollIntoViewIfNeeded();
+  await page.locator('#plan-toggle').click();
+  await page.locator('#plan-sick').click();
+  if ((await page.locator('.plan-keep input').count()) > 1) await page.locator('.plan-keep input').first().check();
+  const resting = await page.locator('.plan-keep input:not(:checked)').count();
+  assert(resting > 0, 'nothing left to rest');
+  await page.locator('#plan-panel').getByRole('button', { name: new RegExp(`^Set ${resting} to sick`, 'i') }).click();
+  await page.waitForTimeout(300);
+  const states = await page.locator('.gchip').evaluateAll((els) => els.map((e) => e.getAttribute('data-state')));
+  assert(states.filter((x) => x === 'skipped').length === resting, `expected ${resting} skipped, got ${states}`);
+  assert(states.includes('fulfilled'), 'a done habit must stay done');
+  await page.getByRole('button', { name: 'Undo all' }).click();
+  await page.waitForTimeout(300);
+  const after = await page.locator('.gchip').evaluateAll((els) => els.map((e) => e.getAttribute('data-state')));
+  assert(!after.includes('skipped'), `undo left ${after}`);
+});
+
 await test('game: screens left to right are Camp, Today, Week, Month, Year', async (page) => {
   await startGame(page);
   const labels = await page.locator('.screen-btn').allTextContents();

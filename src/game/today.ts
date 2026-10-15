@@ -65,6 +65,8 @@ export class TodaySheet {
   private pressing = false;
   private settleAt = 0;
   private resortTimer = 0;
+  /** The "Today is different" panel: open or not, which kind of day, and which habits to keep. */
+  private plan: { open: boolean; reason: SkipReason; keep: Set<string> } = { open: false, reason: 'rest', keep: new Set() };
 
   constructor(
     private readonly app: Controller,
@@ -139,10 +141,107 @@ export class TodaySheet {
       );
     }
     const summary = daySummary(v, this.visible(v));
+    const openCount = this.visible(v).filter((x) => x.state === 'open').length;
+    const toggle = h(
+      'button',
+      { class: 'btn small ghost plan-toggle', type: 'button', id: 'plan-toggle', 'aria-expanded': this.plan.open ? 'true' : 'false', 'aria-controls': 'plan-panel', onclick: () => this.togglePlan() },
+      this.plan.open ? 'Close' : 'Today is different',
+    );
     this.head.replaceChildren(
       h('div', { class: 'head-l' }, pills, h('p', { class: 'head-sub', text: v.viewDate === v.today ? summary : `Logging for ${longDate(v.viewDate)} · ${summary}` })),
+      ...(openCount > 0 || this.plan.open ? [toggle, ...(this.plan.open ? [this.planPanel(v)] : [])] : []),
     );
     this.head.classList.toggle('past', v.viewDate !== v.today);
+  }
+
+  private togglePlan(): void {
+    this.plan.open = !this.plan.open;
+    this.plan.keep = new Set();
+    if (this.last) this.renderHead(this.last);
+    if (this.plan.open) (document.getElementById('plan-rest') as HTMLElement | null)?.focus();
+    else document.getElementById('plan-toggle')?.focus();
+  }
+
+  /**
+   * One choice for a hard day instead of a skip on every habit. It writes the same entries the
+   * options sheet would (rest, sick, night duty, exam, travel), only on habits still open, and
+   * only after a preview. Nothing new is stored, and one Undo puts every habit back.
+   */
+  private planPanel(v: View): HTMLElement {
+    const open = this.visible(v).filter((x) => x.state === 'open');
+    const kinds: Array<{ reason: SkipReason; id: string; label: string; note: string }> = [
+      { reason: 'rest', id: 'plan-rest', label: 'Rest', note: 'Leaves the count, keeps streaks. The day still counts on the trail.' },
+      { reason: 'sick', id: 'plan-sick', label: 'Sick', note: 'A paused day. The mountain waits.' },
+      { reason: 'night', id: 'plan-night', label: 'Night duty', note: 'Resting what you cannot do on shift.' },
+      { reason: 'exam', id: 'plan-exam', label: 'Exam', note: 'Keep the one or two things that matter; rest the rest.' },
+      { reason: 'travel', id: 'plan-travel', label: 'Travel', note: 'Keep what travels; rest the rest.' },
+    ];
+    const label = skipLabel(this.plan.reason).toLowerCase();
+    const resting = open.filter((x) => !this.plan.keep.has(x.h.id));
+    const picker = h('div', { class: 'opts-grid', role: 'radiogroup', 'aria-label': 'Kind of day' });
+    for (const k of kinds) {
+      picker.append(
+        h(
+          'button',
+          { class: 'opt', id: k.id, type: 'button', role: 'radio', 'aria-checked': k.reason === this.plan.reason ? 'true' : 'false', onclick: () => ((this.plan.reason = k.reason), this.last && this.renderHead(this.last), document.getElementById(k.id)?.focus()) },
+          k.label,
+        ),
+      );
+    }
+    const keepList = h('ul', { class: 'plan-keep', 'aria-label': 'Habits to keep today' });
+    for (const x of open) {
+      const id = `plan-keep-${x.h.id}`;
+      const box = h('input', { type: 'checkbox', id, ...(this.plan.keep.has(x.h.id) ? { checked: true } : {}) }) as HTMLInputElement;
+      box.addEventListener('change', () => {
+        if (box.checked) this.plan.keep.add(x.h.id);
+        else this.plan.keep.delete(x.h.id);
+        if (this.last) this.renderHead(this.last);
+        document.getElementById(id)?.focus();
+      });
+      keepList.append(h('li', {}, box, h('label', { for: id, text: ` Keep ${x.h.name}` })));
+    }
+    const note = kinds.find((k) => k.reason === this.plan.reason)?.note ?? '';
+    const apply = h('button', { class: 'btn primary', type: 'button', disabled: resting.length === 0, onclick: () => this.applyPlan(resting.map((x) => x.h.id), this.plan.reason) }, resting.length === 0 ? 'Nothing to change' : `Set ${resting.length} to ${label}`);
+    return h(
+      'div',
+      { class: 'plan', id: 'plan-panel' },
+      picker,
+      h('p', { class: 'opts-hint', text: note }),
+      keepList,
+      h('p', { class: 'opts-hint', 'aria-live': 'polite', text: resting.length === 0 ? 'Every open habit is kept.' : `${open.length} open · ${resting.length} will be marked ${label} · ${open.length - resting.length} kept open. Done ones stay as they are.` }),
+      apply,
+    );
+  }
+
+  private applyPlan(ids: string[], reason: SkipReason): void {
+    const v = this.app.view();
+    const date = v.viewDate;
+    const before = ids.map((id) => ({ id, prev: this.app.entryFields(date, id) }));
+    this.settleAt = performance.now() + 600;
+    const done: typeof before = [];
+    for (const b of before) {
+      const r = this.app.skip(b.id, reason);
+      if (!r.ok) {
+        this.hooks.say(r.message);
+        break;
+      }
+      done.push(b);
+    }
+    this.plan = { open: false, reason: 'rest', keep: new Set() };
+    window.clearTimeout(this.undoTimer);
+    const undo = h('button', { class: 'btn small ghost', type: 'button' }, 'Undo all');
+    undo.addEventListener('click', () => {
+      window.clearTimeout(this.undoTimer);
+      this.undoBar.hidden = true;
+      this.settleAt = performance.now() + 600;
+      for (const b of done) this.app.revert(date, b.id, b.prev);
+      this.hooks.say(`${done.length} habits put back.`);
+    });
+    this.undoBar.replaceChildren(h('span', { text: `${done.length} habits · ${skipLabel(reason).toLowerCase()}` }), undo);
+    this.undoBar.hidden = false;
+    this.undoTimer = window.setTimeout(() => (this.undoBar.hidden = true), 10000);
+    this.hooks.say(`${done.length} habits marked ${skipLabel(reason).toLowerCase()}.`);
+    if (this.last) this.render(this.app.view());
   }
 
   private renderAlerts(v: View): void {
