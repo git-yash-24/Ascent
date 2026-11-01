@@ -113,7 +113,7 @@ export function paintedTent(color = '#5f7d6e'): THREE.Group {
     cap.position.set(0, H + 0.15, z);
     g.add(pole, cap);
   }
-  const guyMat = new THREE.LineBasicMaterial({ color: '#d8ccb0', transparent: true, opacity: 0.7 });
+  const guyMat = new THREE.LineBasicMaterial({ color: '#8f7a5c', transparent: true, opacity: 0.5 });
   const guys: Array<[THREE.Vector3, THREE.Vector3]> = [
     [new THREE.Vector3(0, H + 0.1, D + 0.02), new THREE.Vector3(-0.3, 0, D + 0.45)],
     [new THREE.Vector3(0, H + 0.1, -D - 0.02), new THREE.Vector3(0, 0, -D - 0.75)],

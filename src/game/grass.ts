@@ -115,7 +115,9 @@ export function buildGrassField(count: number): GrassField {
       )
       .replace(
         '#include <project_vertex>',
-        `vec4 wp = modelMatrix * instanceMatrix * vec4( transformed.x, transformed.y * uGrow, transformed.z, 1.0 );
+        `// Deep lying snow buries all but the tallest stubble.
+        float buried = uGrow * ( 1.0 - smoothstep( 0.4, 0.95, 1.0 - uGrow ) * 0.7 );
+        vec4 wp = modelMatrix * instanceMatrix * vec4( transformed.x, transformed.y * buried, transformed.z, 1.0 );
         vec4 root = modelMatrix * instanceMatrix * vec4( 0.0, 0.0, 0.0, 1.0 );
         float bladeH = max( 0.01, wp.y - root.y );
         float k = aH * aH;
@@ -157,7 +159,8 @@ export function buildGrassField(count: number): GrassField {
         g = mix( g, tipC, smoothstep( 0.45, 1.0, vH ) );
         diffuseColor.rgb = g * vTint * uSeason;
         diffuseColor.rgb *= 1.0 - uWet * 0.25;
-        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.86, 0.9, 0.96 ), clamp( uSnow * 1.4 - 0.2, 0.0, 1.0 ) * smoothstep( 0.3, 1.0, vH ) );`,
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.86, 0.9, 0.96 ), clamp( uSnow * 1.4 - 0.2, 0.0, 1.0 ) * mix( 0.82, 1.0, smoothstep( 0.0, 0.6, vH ) ) );
+        // Under lying snow the stubble is dusted all over, so no dark specks stand out of the white.`,
       )
       .replace(
         '#include <lights_fragment_end>',
@@ -171,12 +174,14 @@ export function buildGrassField(count: number): GrassField {
           reflectedLight.directDiffuse += directionalLights[ 0 ].color * diffuseColor.rgb * back * smoothstep( 0.35, 1.0, vH ) * 1.6;
         }
         #endif
-        // A little ambient occlusion down at the roots.
-        reflectedLight.indirectDiffuse *= 0.55 + 0.45 * smoothstep( 0.0, 0.5, vH );
-        reflectedLight.directDiffuse *= 0.65 + 0.35 * smoothstep( 0.0, 0.35, vH );`,
+        // A little ambient occlusion down at the roots (none under lying snow: the snow fills the
+        // gaps, and dark roots read as specks of dirt on the white).
+        float ao = mix( 1.0, 0.0, clamp( uSnow * 1.6, 0.0, 1.0 ) );
+        reflectedLight.indirectDiffuse *= 1.0 - ao * ( 0.45 - 0.45 * smoothstep( 0.0, 0.5, vH ) );
+        reflectedLight.directDiffuse *= 1.0 - ao * ( 0.35 - 0.35 * smoothstep( 0.0, 0.35, vH ) );`,
       );
   };
-  mat.customProgramCacheKey = () => 'grass-field-v1';
+  mat.customProgramCacheKey = () => 'grass-field-v2';
 
   const mesh = new THREE.InstancedMesh(bladeGeometry(), mat, count);
   const m = new THREE.Matrix4();

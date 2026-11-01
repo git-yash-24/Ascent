@@ -32,6 +32,11 @@ export interface Climber {
    * it, the eyes leading), and how open her eyes are (0 shut to 1).
    */
   look(yaw: number, pitch: number, open: number): void;
+  /**
+   * How much her eyes glow, 0 to 1. By day they are two warm points in the hood's shadow; in dim
+   * light (dusk, night, fog) they brighten until the camera's bloom catches them, like embers.
+   */
+  eyeGlow(k: number): void;
   /** Her main cloth colours (the cape and the scarf follow them). */
   palette: { hood: THREE.MeshLambertMaterial; coat: THREE.MeshLambertMaterial; scarf: THREE.MeshLambertMaterial };
   /** Parts a richer look may replace (the stiff scarf tails, the hood's old peak). */
@@ -188,17 +193,22 @@ export function buildClimber(): Climber {
   const opening = ball(0.115, face, 0.95, 1.15, 0.75, 10, 8);
   opening.position.set(0, 0.09, 0.14);
   head.add(opening);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.114, 0.03, 10, 28), hood);
-  rim.position.set(0, 0.095, 0.188);
-  rim.scale.set(0.95, 1.16, 0.85);
+  // A softer, slimmer rim, oval rather than round, tipped forward at the top so the hood's edge
+  // overhangs her brow and the face sits in its shadow (it read as a porthole when it was round).
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.114, 0.024, 10, 28), hood);
+  rim.position.set(0, 0.095, 0.19);
+  rim.scale.set(0.9, 1.2, 0.85);
+  rim.rotation.x = -0.22;
   head.add(rim);
   const mouth = new THREE.Object3D();
   mouth.position.set(0, 0.06, 0.22);
   head.add(mouth);
   // Her eyes: two warm points in the shadow of the hood. They blink, droop when she is tired
   // and lead the head when something catches her attention.
-  // HDR white: through the camera's bloom they glow softly, like embers in the hood.
-  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.15, 1.7) });
+  // Warm cream by day; HDR at night, so the camera's bloom makes them glow like embers (eyeGlow).
+  const eyeDay = new THREE.Color(0.92, 0.8, 0.62);
+  const eyeNight = new THREE.Color(2.4, 2.15, 1.7);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: eyeDay.clone() });
   const eyes = grp(0, 0.1, 0.221);
   for (const sx of [-1, 1]) {
     const eye = ball(0.017, eyeMat, 0.78, 1.2, 0.35, 10, 8);
@@ -372,6 +382,9 @@ export function buildClimber(): Climber {
       eyes.position.x = Math.max(-0.014, Math.min(0.014, yaw * 0.03));
       eyes.position.y = 0.1 + Math.max(-0.01, Math.min(0.01, -pitch * 0.025));
       eyes.scale.y = Math.max(0.08, open);
+    },
+    eyeGlow(k: number) {
+      eyeMat.color.copy(eyeDay).lerp(eyeNight, Math.max(0, Math.min(1, k)));
     },
     flutter(t: number, wind: number, moving: number) {
       const k = Math.min(1.2, wind * 0.9 + moving * 0.35);

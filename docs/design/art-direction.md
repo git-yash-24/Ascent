@@ -111,3 +111,20 @@ Xander: "make it look like a very polished indie game and make it feel alive."
 
 A rigged CC0 character (KayKit Rogue_Hooded) was tried and rejected: polished, but it read as an
 asset-pack chibi and erased Ari's identity. The file is kept in `assets/kaykit/` for reference only.
+
+## Revision 3: legibility pass (2 Nov 2026)
+
+Reviewed against Xander's Little Devil Inside guide (hierarchy of detail, a readable vista, light
+with a reason) by rendering the camp at dawn, noon, golden hour, night, rain, snow and fog.
+Presentation only: no record, rule or story change.
+
+| Found | Fix | Where |
+|---|---|---|
+| Depth of field erased everything past the camp: ridge, forest and far peaks were a smear, and blurred peaks read as pale ghost triangles | A wider sharp band round Ari (1.6x her distance, at least 2.5 m) and under half the blur (0.42, was 0.8). Distance is softened, not erased | `stage.ts` `renderPost` |
+| Ari's eyes blazed through the bloom at noon, so she read as a mask, not a face in the hood's shadow | Warm cream by day; they brighten to the HDR glow only in low light (night, dusk, fog, heavy cloud) | `climber.ts` `eyeGlow`, `stage.ts` |
+| The hood rim was a round, thick ring: a porthole round a black disc | Slimmer, oval, tipped forward at the top so the edge overhangs her brow | `climber.ts` |
+| Under lying snow the grass showed as thousands of dark specks, like dirt on the white | Stubble is dusted all over, root shading is dropped under snow, and deep snow buries all but the tallest blades | `grass.ts` |
+| Tent guy lines were bright white strokes that bloomed like UI lines | Rope brown, half opacity | `campdress.ts` |
+
+Not changed, worth a decision: the far peaks are still plain faceted cones (sculpting them is a
+bigger job); the flag is a plain grey cloth until a mark is chosen.
