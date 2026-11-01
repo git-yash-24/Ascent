@@ -1940,6 +1940,9 @@ export class Stage {
       // readable as shapes (the miniature look softens distance, it does not erase it).
       focusRange: Math.max(2.5, focus * 1.6),
       dof: this.montage || this.intro ? 0.2 : near * 0.42,
+      // Contact shadows: things sit on the ground. Softer by night, when the fire is the key.
+      ao: 0.62 - night * 0.22,
+      aoRadius: 0.45,
       vignette: 0.32 + night * 0.12,
       grain: 0.028,
       saturation: 1.12 - night * 0.08,

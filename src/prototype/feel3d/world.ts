@@ -644,11 +644,57 @@ export function paintedGround(mat: THREE.Material): void {
           diffuseColor.rgb *= 0.86 + stroke * 0.2 + dab * 0.08;
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.04, 0.9), smoothstep(0.55, 0.85, big) * 0.6);
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.9, 0.97, 1.05), smoothstep(0.45, 0.15, big) * 0.5);
+          // The camp clearing up close (art direction revision 4): trodden earth with grit and
+          // pebbles, soot and pale ash round the hearth, and the meadow creeping in at the edge.
+          float campD = length(vGW.xz);
+          float campK = 1.0 - smoothstep(2.8, 4.6, campD);
+          if (campK > 0.001) {
+            float g1 = gn(q * 13.0);
+            float g2 = gn(q * 29.0 + 7.0);
+            float grit = g1 * 0.6 + g2 * 0.4;
+            diffuseColor.rgb *= mix(1.0, 0.8 + grit * 0.34, campK);
+            // Small stones, lit on top: sparse, with a darker rim.
+            float pv = gn(q * 8.0 + 3.0);
+            float peb = smoothstep(0.8, 0.86, pv) * campK;
+            float rimP = smoothstep(0.74, 0.8, pv) * (1.0 - smoothstep(0.8, 0.86, pv)) * campK;
+            diffuseColor.rgb *= 1.0 - rimP * 0.35;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.57, 0.52) * (0.85 + g2 * 0.3), peb * 0.6);
+            // Soot and ash round the hearth, ragged at the edge.
+            float ragged = campD + (gn(q * 3.1) - 0.5) * 0.5;
+            float soot = 1.0 - smoothstep(0.7, 1.45, ragged);
+            vec3 ashC = mix(vec3(0.13, 0.115, 0.105), vec3(0.46, 0.44, 0.41), smoothstep(0.35, 0.8, gn(q * 5.5 + 2.0)));
+            diffuseColor.rgb = mix(diffuseColor.rgb, ashC, soot * 0.75);
+            // Worn darker where feet go round the fire.
+            float ring = smoothstep(1.2, 1.7, campD) * (1.0 - smoothstep(2.0, 2.7, campD));
+            diffuseColor.rgb *= 1.0 - ring * 0.14 * (0.6 + g1 * 0.4);
+            // The meadow creeping back in: green dabs toward the edge of the clearing.
+            float edge = smoothstep(1.9, 3.6, campD) * campK;
+            float moss = smoothstep(0.45, 0.72, gn(q * 2.3 + 9.0)) * edge;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.4, 0.18) * (0.85 + g1 * 0.3), moss * 0.7);
+          }
+        }`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        {
+          // Relief you can see under a low sun: grit and pebbles tilt the normal near camp, and
+          // a broader ripple everywhere. Gradient of the same noise, by finite difference.
+          vec2 q = vGW.xz;
+          float campK = 1.0 - smoothstep(2.8, 4.6, length(q));
+          float e = 0.02;
+          #define GH(p) (gn((p) * 13.0) * 0.6 + gn((p) * 29.0 + 7.0) * 0.4 + smoothstep(0.74, 0.86, gn((p) * 8.0 + 3.0)) * 1.4)
+          float h0 = GH(q);
+          float gx = (GH(q + vec2(e, 0.0)) - h0) / e;
+          float gz = (GH(q + vec2(0.0, e)) - h0) / e;
+          float k = 0.0035 * campK + 0.0006;
+          normal = normalize(normal - (viewMatrix * vec4(gx * k, 0.0, gz * k, 0.0)).xyz);
+          #undef GH
         }`,
       );
   };
   const key = mat.customProgramCacheKey.bind(mat);
-  mat.customProgramCacheKey = () => key() + '-painted';
+  mat.customProgramCacheKey = () => key() + '-painted-v2';
 }
 
 /** Bend a material's vertices with the shared wind, by height above `base` squared times `k`. */

@@ -90,8 +90,64 @@ void main(){
   gl_FragColor = vec4(vec3(acc / 12.0), 1.0);
 }`;
 
+const AO = /* glsl */ `
+uniform sampler2D tDepth; uniform float uNear; uniform float uFar; uniform vec2 uTexel; uniform float uRadius; uniform float uProj;
+varying vec2 vUv;
+float viewZ(float d){ return (uNear * uFar) / ((uFar - uNear) * d - uFar); }
+float lz(vec2 uv){ return -viewZ(texture2D(tDepth, uv).x); }
+float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main(){
+  // Contact shadows from depth alone: compare each sample with the plane the centre lies on
+  // (1/z is linear across a plane in screen space), so open ground stays clean and only real
+  // creases, feet and the undersides of things darken.
+  float d0 = texture2D(tDepth, vUv).x;
+  if (d0 > 0.99999) { gl_FragColor = vec4(1.0); return; }
+  float z0 = lz(vUv);
+  float w0 = 1.0 / z0;
+  float wl = 1.0 / lz(vUv - vec2(uTexel.x, 0.0)), wr = 1.0 / lz(vUv + vec2(uTexel.x, 0.0));
+  float wd = 1.0 / lz(vUv - vec2(0.0, uTexel.y)), wu = 1.0 / lz(vUv + vec2(0.0, uTexel.y));
+  float gx = abs(wr - w0) < abs(w0 - wl) ? wr - w0 : w0 - wl;
+  float gy = abs(wu - w0) < abs(w0 - wd) ? wu - w0 : w0 - wd;
+  float rpx = clamp(uRadius * uProj / z0, 3.0, 60.0);
+  float rot = hash(gl_FragCoord.xy) * 6.2831;
+  float occ = 0.0;
+  for (int i = 0; i < 10; i++) {
+    float fi = float(i);
+    float a = rot + fi * 2.39996;
+    float r = rpx * sqrt((fi + 0.5) / 10.0);
+    vec2 o = vec2(cos(a), sin(a)) * r;
+    vec2 suv = vUv + o * uTexel;
+    float zs = lz(suv);
+    float wp = w0 + gx * o.x + gy * o.y;
+    float zp = 1.0 / max(wp, 1e-6);
+    float dz = zp - zs;
+    float rangeOk = 1.0 - smoothstep(uRadius * 1.5, uRadius * 3.0, dz);
+    occ += smoothstep(0.015 + z0 * 0.004, 0.08 + z0 * 0.01, dz) * rangeOk;
+  }
+  float ao = 1.0 - occ / 10.0;
+  gl_FragColor = vec4(vec3(ao), 1.0);
+}`;
+
+const AO_BLUR = /* glsl */ `
+uniform sampler2D tSrc; uniform sampler2D tDepth; uniform float uNear; uniform float uFar; uniform vec2 uTexel; uniform vec2 uDir;
+varying vec2 vUv;
+float viewZ(float d){ return (uNear * uFar) / ((uFar - uNear) * d - uFar); }
+void main(){
+  // Depth-aware blur so the shading does not bleed across silhouettes.
+  float z0 = -viewZ(texture2D(tDepth, vUv).x);
+  float acc = 0.0; float wsum = 0.0;
+  for (int i = -3; i <= 3; i++) {
+    vec2 uv = vUv + uDir * uTexel * float(i) * 1.5;
+    float z = -viewZ(texture2D(tDepth, uv).x);
+    float w = exp(-float(i * i) * 0.18) * (1.0 - smoothstep(0.0, 0.06 * z0 + 0.05, abs(z - z0)));
+    acc += texture2D(tSrc, uv).r * w;
+    wsum += w;
+  }
+  gl_FragColor = vec4(vec3(acc / max(wsum, 1e-4)), 1.0);
+}`;
+
 const COMPOSITE = /* glsl */ `
-uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tShaft; uniform sampler2D tBlur; uniform sampler2D tDepth;
+uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tShaft; uniform sampler2D tBlur; uniform sampler2D tDepth; uniform sampler2D tAO; uniform float uAO;
 uniform float uExposure; uniform float uBloom; uniform vec3 uShaftColor; uniform float uShaft;
 uniform float uNear; uniform float uFar; uniform float uFocus; uniform float uFocusRange; uniform float uDof;
 uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uSat; uniform float uContrast;
@@ -117,6 +173,8 @@ void main(){
   // A whisper of lens fringe toward the corners.
   vec2 ca = cc * r2 * uFringe;
   vec3 col = vec3(texture2D(tScene, uv - ca).r, texture2D(tScene, uv).g, texture2D(tScene, uv + ca).b);
+  // Contact shadows: ambient light is darkened in creases, under props and where things meet the ground.
+  if (uAO > 0.001) col *= mix(1.0, texture2D(tAO, uv).r, uAO);
   // Focus: blend toward the soft buffer away from the focal distance.
   if (uDof > 0.001) {
     float z = -viewZ(texture2D(tDepth, uv).x);
@@ -156,6 +214,9 @@ export interface PostParams {
   focus: number;
   focusRange: number;
   dof: number;
+  /** Contact shadows (ambient occlusion), 0 off to 1; and their reach in metres. */
+  ao?: number;
+  aoRadius?: number;
   vignette: number;
   grain: number;
   saturation: number;
@@ -173,6 +234,11 @@ export class Post {
   private readonly shaftB: THREE.WebGLRenderTarget;
   private readonly blur: THREE.WebGLRenderTarget;
   private readonly blur2: THREE.WebGLRenderTarget;
+  private readonly aoA: THREE.WebGLRenderTarget;
+  private readonly aoB: THREE.WebGLRenderTarget;
+  private readonly aoPass = pass(AO, { tDepth: { value: null }, uNear: { value: 0.05 }, uFar: { value: 5000 }, uTexel: { value: new THREE.Vector2() }, uRadius: { value: 0.4 }, uProj: { value: 500 } });
+  private readonly aoBlur = pass(AO_BLUR, { tSrc: { value: null }, tDepth: { value: null }, uNear: { value: 0.05 }, uFar: { value: 5000 }, uTexel: { value: new THREE.Vector2() }, uDir: { value: new THREE.Vector2(1, 0) } });
+  private readonly white: THREE.DataTexture;
   private readonly quad: THREE.Mesh;
   private readonly cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly prefilter = pass(PREFILTER, { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, uThreshold: { value: 1.1 }, uKnee: { value: 0.6 } });
@@ -199,12 +265,18 @@ export class Post {
     this.blur2 = new THREE.WebGLRenderTarget(1, 1, opts);
     this.black = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
     this.black.needsUpdate = true;
+    this.white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+    this.white.needsUpdate = true;
+    this.aoA = new THREE.WebGLRenderTarget(1, 1, { ...opts, type: THREE.UnsignedByteType });
+    this.aoB = new THREE.WebGLRenderTarget(1, 1, { ...opts, type: THREE.UnsignedByteType });
     this.comp = pass(COMPOSITE, {
       tScene: { value: null },
       tBloom: { value: null },
       tShaft: { value: null },
       tBlur: { value: null },
       tDepth: { value: null },
+      tAO: { value: null },
+      uAO: { value: 0 },
       uExposure: { value: 1 },
       uBloom: { value: 0.6 },
       uShaftColor: { value: new THREE.Color() },
@@ -244,6 +316,8 @@ export class Post {
     this.shaftB.setSize(Math.max(1, this.w >> 2), Math.max(1, this.h >> 2));
     this.blur.setSize(Math.max(1, this.w >> 2), Math.max(1, this.h >> 2));
     this.blur2.setSize(Math.max(1, this.w >> 3), Math.max(1, this.h >> 3));
+    this.aoA.setSize(Math.max(1, this.w >> 1), Math.max(1, this.h >> 1));
+    this.aoB.setSize(Math.max(1, this.w >> 1), Math.max(1, this.h >> 1));
   }
 
   private draw(mat: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null): void {
@@ -312,7 +386,34 @@ export class Post {
     }
     this.up.uniforms.uMix!.value = 1;
 
+    // Contact shadows at half resolution, blurred across then down, respecting depth edges.
+    const ao = p.ao ?? 0;
+    if (ao > 0.001) {
+      const half = new THREE.Vector2(1 / this.aoA.width, 1 / this.aoA.height);
+      const a = this.aoPass.uniforms;
+      a.tDepth!.value = this.hdr.depthTexture;
+      a.uNear!.value = camera.near;
+      a.uFar!.value = camera.far;
+      a.uTexel!.value = half;
+      a.uRadius!.value = p.aoRadius ?? 0.4;
+      a.uProj!.value = this.aoA.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+      this.draw(this.aoPass, this.aoA);
+      const b = this.aoBlur.uniforms;
+      b.tDepth!.value = this.hdr.depthTexture;
+      b.uNear!.value = camera.near;
+      b.uFar!.value = camera.far;
+      b.uTexel!.value = half;
+      b.tSrc!.value = this.aoA.texture;
+      (b.uDir!.value as THREE.Vector2).set(1, 0);
+      this.draw(this.aoBlur, this.aoB);
+      b.tSrc!.value = this.aoB.texture;
+      (b.uDir!.value as THREE.Vector2).set(0, 1);
+      this.draw(this.aoBlur, this.aoA);
+    }
+
     const u = this.comp.uniforms;
+    u.tAO!.value = ao > 0.001 ? this.aoA.texture : this.white;
+    u.uAO!.value = ao;
     u.tScene!.value = src;
     u.tBloom!.value = this.ups[0]!.texture;
     u.tShaft!.value = onScreen ? this.shaftA.texture : this.black;
@@ -340,6 +441,6 @@ export class Post {
   }
 
   dispose(): void {
-    for (const t of [this.hdr, ...this.mips, ...this.ups, this.shaftA, this.shaftB, this.blur, this.blur2]) t.dispose();
+    for (const t of [this.hdr, ...this.mips, ...this.ups, this.shaftA, this.shaftB, this.blur, this.blur2, this.aoA, this.aoB]) t.dispose();
   }
 }
