@@ -1903,6 +1903,8 @@ export class Stage {
     const blink = bt >= 0 && bt < 0.16 ? Math.sin((bt / 0.16) * Math.PI) : 0;
     const open = (1 - blink) * (1 - this.fatigue * 0.45);
     c.look(this.reduced ? 0 : g.yaw, this.reduced ? 0 : g.pitch, open);
+    // Her eyes glow only when the light is low: at dusk and by night, in fog or under heavy cloud.
+    c.eyeGlow(clamp01(this.night * 1.3 + this.golden * 0.35 + this.cond.fog * 0.4 + this.clouds.cover * 0.15));
   }
 
   /**
@@ -1934,8 +1936,10 @@ export class Stage {
       shaft: shaft * 0.55,
       shaftColor: this.world.skySun.color,
       focus,
-      focusRange: Math.max(1.5, focus * 0.9),
-      dof: this.montage || this.intro ? 0.25 : near * 0.8,
+      // A wide sharp band around Ari and a gentle falloff: the far peaks and the forest stay
+      // readable as shapes (the miniature look softens distance, it does not erase it).
+      focusRange: Math.max(2.5, focus * 1.6),
+      dof: this.montage || this.intro ? 0.2 : near * 0.42,
       vignette: 0.32 + night * 0.12,
       grain: 0.028,
       saturation: 1.12 - night * 0.08,
