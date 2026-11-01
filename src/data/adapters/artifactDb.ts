@@ -6,7 +6,7 @@
  *   log-YYYY-MM~<device>                        that device's entries for the month
  * Entries are encoded as arrays (see codec.ts) because update merges objects recursively.
  */
-import { decodeEntry, encodeEntry, logDocId, parseDocId } from '../codec';
+import { decodeActs, decodeEntry, encodeActs, encodeEntry, logDocId, parseDocId } from '../codec';
 import { PermanentBackendError, type Backend, type DeviceLog, type DocKindSingle, type RemoteDocs } from '../backend';
 import type { DateKey, Entry, HabitId } from '../../core/model/types';
 
@@ -74,7 +74,8 @@ export class ArtifactDbBackend implements Backend {
 
   async putEntry(month: string, dev: string, date: DateKey, habit: HabitId, e: Entry): Promise<void> {
     const ref = this.db.doc(`${this.base}/${logDocId(month, dev)}`);
-    const patch = { days: { [date]: { [habit]: encodeEntry(e) } } };
+    const patch: Record<string, unknown> = { days: { [date]: { [habit]: encodeEntry(e) } } };
+    if (e.acts) patch.acts = { [date]: { [habit]: encodeActs(e.acts) } };
     try {
       await ref.update(patch);
       return;
@@ -96,9 +97,12 @@ export class ArtifactDbBackend implements Backend {
   async getEntry(month: string, dev: string, date: DateKey, habit: HabitId): Promise<Entry | undefined> {
     try {
       const snap = await this.db.doc(`${this.base}/${logDocId(month, dev)}`).get();
-      const days = snap.exists ? (snap.data()?.days as Record<string, Record<string, unknown>> | undefined) : undefined;
-      const raw = days?.[date]?.[habit];
-      return raw === undefined ? undefined : decodeEntry(raw, dev) ?? undefined;
+      const data = snap.exists ? snap.data() : undefined;
+      const raw = (data?.days as Record<string, Record<string, unknown>> | undefined)?.[date]?.[habit];
+      const e = raw === undefined ? undefined : decodeEntry(raw, dev) ?? undefined;
+      const acts = decodeActs((data?.acts as Record<string, Record<string, unknown>> | undefined)?.[date]?.[habit]);
+      if (e && acts?.length) e.acts = acts;
+      return e;
     } catch (e) {
       rethrow(e);
     }

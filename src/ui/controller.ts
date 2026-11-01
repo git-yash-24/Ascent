@@ -4,17 +4,19 @@
  */
 import { derive } from '../core/derive';
 import { startCursor, tick, type DayCursor } from '../core/model/clock';
-import { addDays, compareDateKeys, weekStart } from '../core/model/date';
+import { addDays, compareDateKeys, monthOf, weekStart } from '../core/model/date';
 import { correctRecord, entryOn, isCleared, isEditable, logEntry } from '../core/model/entries';
-import { CURRENT_SCHEMA } from '../core/model/schemas';
-import type { DateKey, Derived, Entry, Habit, HabitId, HabitsDoc, Profile, SkipReason, Snapshot } from '../core/model/types';
+import { ACTS_MAX, CURRENT_SCHEMA } from '../core/model/schemas';
+import type { DateKey, Derived, Entry, ExpeditionDoc, Habit, HabitId, HabitsDoc, Profile, SkipReason, Snapshot } from '../core/model/types';
 import { chooseSteep } from '../core/habits/weekly';
 import { archiveHabit, createHabit, deleteHabit, editDefinition, renameHabit, restoreHabit, retagHabit, sameChainRules, versionOn, type Definition } from '../core/habits/versions';
 import { suggestTag } from '../core/tags';
 import { NOTE_MAX } from '../core/model/schemas';
 import { backupDue, exportCsv, exportJson, backupFileName, prepareImport, type PreparedImport } from '../data/backup/backup';
 import type { SyncedStore, StoreState } from '../data/store';
+import { checkDay, type TrialState } from '../data/trial';
 import type { KV } from '../data/sync/journal';
+import { appNow } from '../core/time/appClock';
 
 /**
  * Which of Ari's chores a habit becomes is the story's choice, made per scene so it stays
@@ -44,11 +46,12 @@ export interface Clock {
 }
 
 export const systemClock: Clock = {
-  now: () => Date.now(),
+  now: () => appNow(),
   zone: () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
 };
 
 const CURSOR_KEY = 'ascent:cursor:v1';
+const TRIAL_KEY = 'ascent:trial:v1';
 const BACKUP_KEY = 'ascent:lastBackup:v1';
 const LAUNCHED_KEY = 'ascent:launched:v1';
 
@@ -191,6 +194,16 @@ export class Controller {
     return { ...fields, at: this.clock.now(), dev: this.dev };
   }
 
+  /**
+   * The entry with this change added to its history of action times (decision G-38): the
+   * last ACTS_MAX changes, each with when it was recorded and what it became.
+   */
+  private withActs(date: DateKey, habit: HabitId, e: Entry): Entry {
+    const prev = this.store.current.snapshot.logs[monthOf(date)]?.days[date]?.[habit];
+    const act = { at: e.at, ...(e.v !== undefined ? { v: e.v } : {}), ...(e.skip !== undefined ? { skip: e.skip } : {}) };
+    return { ...e, acts: [...(prev?.acts ?? []), act].slice(-ACTS_MAX) };
+  }
+
   setValue(habit: HabitId, value: number): ActionResult {
     return this.write(habit, this.entry({ v: value }));
   }
@@ -201,7 +214,7 @@ export class Controller {
   }
 
   /**
-   * The game screen's tap: done (the full target) or, when already done, empty again.
+   * The game screen's hold: done (the full target) or, when already done, empty again.
    * Anything in between (attempted, held, skipped) becomes done.
    */
   tapDone(habit: HabitId): ActionResult {
@@ -211,6 +224,30 @@ export class Controller {
     const cur = entryOn(this.store.current.snapshot, this._viewDate, habit);
     const done = cur?.v !== undefined && cur.v >= ver.target;
     return done ? this.clearEntry(habit) : this.setValue(habit, ver.target);
+  }
+
+  /** Mark the full target done, whatever was there (the options sheet's "Mark done"). */
+  complete(habit: HabitId): ActionResult {
+    const h = this.store.current.snapshot.habits.habits.find((x) => x.id === habit);
+    const ver = h ? versionOn(h, this._viewDate) : undefined;
+    if (!ver) return { ok: false, message: 'That habit no longer exists.' };
+    return this.setValue(habit, ver.target);
+  }
+
+  /** The value a habit had on a day, to put back on Undo (null: nothing logged). */
+  entryFields(date: DateKey, habit: HabitId): { v?: number; skip?: SkipReason } | null {
+    const e = entryOn(this.store.current.snapshot, date, habit);
+    if (!e || (e.v === undefined && e.skip === undefined)) return null;
+    return { ...(e.v !== undefined ? { v: e.v } : {}), ...(e.skip !== undefined ? { skip: e.skip } : {}) };
+  }
+
+  /** Undo: put back exactly what was there before, on the day it was logged. */
+  revert(date: DateKey, habit: HabitId, prev: { v?: number; skip?: SkipReason } | null): ActionResult {
+    const e = this.entry(prev ?? {});
+    const r = logEntry(this.store.current.snapshot, this.today, date, habit, e);
+    if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be undone.' };
+    this.store.putEntry(date, habit, this.withActs(date, habit, e));
+    return { ok: true };
   }
 
   skip(habit: HabitId, reason: SkipReason): ActionResult {
@@ -224,7 +261,7 @@ export class Controller {
   private write(habit: HabitId, e: Entry): ActionResult {
     const r = logEntry(this.store.current.snapshot, this.today, this._viewDate, habit, e);
     if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be saved.' };
-    this.store.putEntry(this._viewDate, habit, e);
+    this.store.putEntry(this._viewDate, habit, this.withActs(this._viewDate, habit, e));
     return { ok: true };
   }
 
@@ -233,7 +270,7 @@ export class Controller {
     const e = this.entry(fields ?? {});
     const r = correctRecord(s, this.today, date, habit, e);
     if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be saved.' };
-    this.store.putEntry(date, habit, e);
+    this.store.putEntry(date, habit, this.withActs(date, habit, e));
     this.store.putDoc('corrections', r.snapshot.corrections);
     return { ok: true };
   }
@@ -286,7 +323,7 @@ export class Controller {
     const next = Math.max(0, w.today + delta);
     const r = logEntry(this.store.current.snapshot, this.today, this.today, w.habit, this.entry({ v: next }));
     if (!r.ok) return { ok: false, message: REJECTIONS[r.reason] ?? 'That could not be saved.' };
-    this.store.putEntry(this.today, w.habit, this.entry({ v: next }));
+    this.store.putEntry(this.today, w.habit, this.withActs(this.today, w.habit, this.entry({ v: next })));
     return { ok: true };
   }
 
@@ -371,7 +408,8 @@ export class Controller {
       // Clear every stored entry for the habit, then drop it from the habit list.
       for (const log of Object.values(s.logs)) {
         for (const [date, entries] of Object.entries(log.days)) {
-          if (entries[id] && !isCleared(entries[id])) this.store.putEntry(date, id, this.entry({}));
+          // A deleted habit leaves no history of action times either.
+          if (entries[id] && !isCleared(entries[id])) this.store.putEntry(date, id, { ...this.entry({}), acts: [] });
         }
       }
       this.store.putDoc('habits', next.habits);
@@ -401,6 +439,32 @@ export class Controller {
       return { ok: false, message: e instanceof Error ? e.message : 'That change could not be saved.' };
     }
     return { ok: true };
+  }
+
+  /** Optional personal marks: symbol, accent, expedition name. `null` clears a field. */
+  saveExpedition(patch: { name?: string | null; symbol?: ExpeditionDoc['symbol'] | null; accent?: ExpeditionDoc['accent'] | null; introOn?: DateKey | null }): ActionResult {
+    const next: ExpeditionDoc = { ...this.store.current.snapshot.expedition };
+    for (const [k, v] of Object.entries(patch) as Array<[keyof ExpeditionDoc, unknown]>) {
+      if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) delete next[k];
+      else (next as unknown as Record<string, unknown>)[k] = typeof v === 'string' ? v.trim() : v;
+    }
+    try {
+      this.store.putDoc('expedition', next);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : 'That could not be saved.' };
+    }
+    return { ok: true };
+  }
+
+  /** Record that a moment was shown (a camp improvement revealed, the intro). Idempotent. */
+  markSeen(moment: string): void {
+    const seen = this.store.current.snapshot.seen;
+    if (seen.moments.includes(moment)) return;
+    try {
+      this.store.putDoc('seen', { ...seen, moments: [...seen.moments, moment].slice(-500) });
+    } catch {
+      // a moment not recorded only plays again; nothing is lost
+    }
   }
 
   // Backup ----------------------------------------------------------------------------------
@@ -457,6 +521,32 @@ export class Controller {
 
   private saveCursor(): void {
     this.kvSet(CURSOR_KEY, JSON.stringify(this.cursor));
+  }
+
+  // M10: the 14-day check -----------------------------------------------------------------
+
+  /** This device's record check so far (data/trial.ts), or null before the first one. */
+  trialState(): TrialState | null {
+    try {
+      return JSON.parse(this.kvGet(TRIAL_KEY) ?? 'null') as TrialState | null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Once a day (or now, when asked): compare the whole record with yesterday's fingerprint and
+   * check that a backup reads back identical. Read-only; skipped while the account store could
+   * not be read (an offline copy would look like lost records).
+   */
+  trialCheck(app: string, force = false): TrialState | null {
+    const st = this.store.current;
+    if (st.offline || !st.snapshot.profile) return this.trialState();
+    const prev = this.trialState();
+    if (!force && prev?.last?.day === this.today) return prev;
+    const next = checkDay(prev, st.snapshot, this.today, app, this.clock.now());
+    this.kvSet(TRIAL_KEY, JSON.stringify(next));
+    return next;
   }
 
   private kvGet(k: string): string | null {

@@ -1,16 +1,25 @@
 /**
- * Tap or hold on one control (Xander: "tap for done or empty for not done but hold 0.7 sec for
- * attempted or rest options").
+ * Tap or hold on one control. On a habit chip (Xander, 13 Oct: "the tap hold will be the
+ * completed and only tap will reveal all the other options"): holding marks it done, a tap opens
+ * the options.
  *
- * Touch and mouse: a press shorter than HOLD_MS is a tap; holding past it opens the options and
- * the release does nothing more. Moving more than a few pixels is a swipe, never a tap. Keyboard:
- * Enter or Space taps; Shift+F10 or the context-menu key opens the options. Right-click opens
- * them too.
+ * Touch and mouse: a press shorter than HOLD_MS is a tap; holding past it fires `hold` and the
+ * release does nothing more. Moving more than a few pixels is a swipe, never a tap. Keyboard:
+ * Enter or Space taps. Shift+F10, the context-menu key and right-click fire `menu` (or `hold`
+ * when there is no menu).
  */
 export const HOLD_MS = 700;
 const SLOP_PX = 10;
 
-export function holdable(el: HTMLElement, on: { tap(e: { x: number; y: number }): void; hold(): void }): void {
+export interface TapEvent {
+  x: number;
+  y: number;
+  /** 'key' when Enter or Space activated it: an editor may take focus at once. */
+  via: 'pointer' | 'key';
+}
+
+export function holdable(el: HTMLElement, on: { tap(e: TapEvent): void; hold(): void; menu?(): void }): void {
+  const menu = (): void => (on.menu ?? on.hold)();
   let timer = 0;
   let start: { x: number; y: number; id: number; touch: boolean } | null = null;
   let held = false;
@@ -45,7 +54,7 @@ export function holdable(el: HTMLElement, on: { tap(e: { x: number; y: number })
     const wasPending = timer !== 0;
     cancel();
     quietUntil = performance.now() + 600;
-    if (wasPending && !held) on.tap({ x: e.clientX, y: e.clientY });
+    if (wasPending && !held) on.tap({ x: e.clientX, y: e.clientY, via: 'pointer' });
   });
   el.addEventListener('pointercancel', cancel);
   el.addEventListener('pointerleave', cancel);
@@ -56,7 +65,7 @@ export function holdable(el: HTMLElement, on: { tap(e: { x: number; y: number })
       return;
     }
     const r = el.getBoundingClientRect();
-    on.tap({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    on.tap({ x: r.left + r.width / 2, y: r.top + r.height / 2, via: 'key' });
   });
   el.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -66,13 +75,13 @@ export function holdable(el: HTMLElement, on: { tap(e: { x: number; y: number })
       cancel();
       held = true;
       quietUntil = performance.now() + 600;
-      on.hold();
+      menu();
     }
   });
   el.addEventListener('keydown', (e) => {
     if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
       e.preventDefault();
-      on.hold();
+      menu();
     }
   });
   el.setAttribute('aria-keyshortcuts', 'Shift+F10');

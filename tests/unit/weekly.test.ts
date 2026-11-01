@@ -178,6 +178,45 @@ describe('rest and sick days', () => {
   });
 });
 
+describe('neutral and rest-heavy weeks (owner decision, 15 Oct)', () => {
+  it('fewer than 3 countable days: the week is neutral, nothing moves, the chain and comeback count hold', () => {
+    let s = week(withHabits(R(MON)), 0, 0, 7);
+    for (let i = 0; i < 5; i++) s = log(s, day(MON, 7 + i), 'R', i % 2 ? 'sick' : 'rest');
+    // the two countable days left empty: would have been a slip
+    s = week(s, 2, 0, 7);
+    const d = derive(s, endOf(2));
+    const w = d.climb.weeks[1];
+    expect(w?.verdict).toBe('rest');
+    expect(w?.neutral).toBe(true);
+    expect(w?.moved).toBe(0);
+    expect(d.climb.weeklyChain).toBe(2);
+  });
+
+  it('a rest-heavy week never slips: 4 rest days and nothing else holds', () => {
+    let s = withHabits(R(MON));
+    for (let i = 0; i < 4; i++) s = log(s, day(MON, i), 'R', 'rest');
+    const w = derive(s, endOf(0)).climb.weeks[0];
+    expect(w?.raw).toBe(0);
+    expect(w?.verdict).toBe('hold');
+    expect(w?.restDays).toBe(4);
+  });
+
+  it('weather after a rest-heavy week is calm, not snow', async () => {
+    const { weatherOf } = await import('../../src/core/world');
+    let s = withHabits(R(MON));
+    for (let i = 0; i < 4; i++) s = log(s, day(MON, i), 'R', 'sick');
+    const d = derive(s, { date: wk(1), ended: false });
+    expect(d.climb.weeks[0]?.verdict).toBe('hold');
+    expect(weatherOf(d, wk(1))).toBe('calm');
+  });
+
+  it('your rhythm is the middle of the last judged weeks and needs two of them', async () => {
+    const { rhythm } = await import('../../src/game/views');
+    expect(rhythm([{ score: 0.6, verdict: 'climb' }])).toBeNull();
+    expect(rhythm([{ score: 0.4, verdict: 'hold' }, { score: 0.9, verdict: 'rest', neutral: true }, { score: 0.8, verdict: 'climb' }])).toContain('about 60%');
+  });
+});
+
 describe('choosing the steep line', () => {
   const unlocked = (): Snapshot => {
     let s = withSteep(base(), []);

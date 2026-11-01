@@ -86,9 +86,301 @@ Calls made this round:
 - **G-15 Replay**: the day's beat, each habit (done first, then not), the flask, the journal line, how it ended; at most 9 captions, 1.25 s each; tap or Close to stop.
 - **G-16 Base camp opens on the Journal tab.** Today's note box floats over the world so you write while he does; earlier pages, trophies, leagues and advice are below.
 
+## MVP round: the opening, companionship, ownership, a living world
+
+Asked for: "whatever can be properly included in the MVP and also a start animation for first
+timers", from everything decided since the last beta (story direction, the attachment and
+Homescapes briefs; the full plan is in the Docs plan, tabs Story Engine, Attachment, Homescapes).
+
+| Piece | Where |
+|---|---|
+| Opening scene: down through the snow to the fire, the knot, the map caught, she looks up, the second cup | `Stage.playIntro`, `introStep`, `introPose`; `GameView.startOnboarding` |
+| Your mark: symbol and colour on the flag, pennants, pack and a carved stone; optional expedition name | `ExpeditionDoc` (schema 1), `src/game/kit.ts`, `src/game/onboard.ts`, Setup "Your expedition" |
+| Camp that travels: improvements by story day, next one named in Today's detail | `src/core/world.ts` (`CAMP_SCHEDULE`, `campState`), `Kit.setBuilt`, `GameView.renderCamp` |
+| Weather from the last ended week; sky by your clock | `weatherOf`, `Stage.setWeather`, `skyAt` |
+| After missed days she watches the trail; the fire burns low; one tap relights it | `momentumStep`, `Stage.setMomentum` |
+| HUD: gear top left, tabs on the top row, flask as a ring gauge, all rest after 4.5 s idle; detail is a full-screen blurred layer with its own title bar | `index.html`, `GameView` |
+
+Calls made this round:
+
+- **G-17 The opening plays once**, on a first launch, before the welcome card (which now sits as glass over the camp). Skip ends it at once; reduced motion shows the still camp with the cup poured. Someone who began before it existed sees it once with a short "Your mark" card. Setup can play it again. Recorded as `expedition.introOn`.
+- **G-18 The mark is optional and decorative**: five symbols, six colours, ash by default. It is part of the record, synced and in backups. No mark is offered for purchase, ever.
+- **G-19 The second cup and seat are yours.** The cup fills when the day closes (with a chime when it happens live) and empties if the day reopens.
+- **G-20 Arrival nod** once per day, or after 4 hours away; never on quick tab switches.
+- **G-21 Camp improvements by story day**: windbreak 5, cooking stone 12, lantern 20, woodpile 30, pennants 45, bench 60, tarp 90, wind chime 120. A new one is shown once (the camera finds it); none is ever taken away.
+- **G-22 Weather is the last ended week**: climb or summit clear, hold snow, slip storm. A climb secured this week clears the sky early. Rest and sick days are always calm. Unchecked habits never make her shiver.
+- **G-23 Momentum floor**: after 1 to 3 missed days she glances back at the trail; at 3 the fire is down to embers. It never gets worse than that, and any effort today ends it at once.
+- **G-24 Touching Ari** makes her look at you at most once every 10 s; the fire still sparks every time.
+- **G-25 User-facing text calls Ari "she".**
+
+## UI audit round (13 Oct): gestures, honest numbers, modals, readability
+
+Asked for: hold marks a habit done and a tap opens the other options (Xander), and the fixes in
+section 0 of `Ascent_UI_Cinematic_Experience_Claude_Guideline.md`, inside the current five screens.
+
+Before → after:
+
+| Area | Before | After |
+|---|---|---|
+| Habit chip | Tap filled the whole target (0 → 50/50); hold opened options | Hold 0.7 s = done (again = empty); tap opens the sheet: amount (total so far), Mark done, Attempted, rest options, Clear. Button semantics, state in the name |
+| Undo | None on the game screen | A few seconds of Undo after any change; it restores exactly the prior entry (12/50, a sick day), not empty |
+| Ghost click | n/a | The click that ends the opening tap is swallowed near the tap point, so it cannot press a button in the new sheet |
+| Keyboard | Enter toggled done | Enter opens the sheet with Mark done (or the amount) focused; Shift+F10 too; #list stays plain checkboxes |
+| Camp reveal | Marked seen 0.4 to 2.2 s before it played | Earned, waiting, shown are separate. Plays only on Camp/Today with nothing else up and the tab visible; marked seen when it finishes; cut short by leaving, it waits. Several at once: newest plays, all named |
+| Faded HUD | Opacity 0 but focusable and tappable | Idle recedes to low contrast, never while focused; when the detail is up the tabs, flask and gear are inert and focus moves to the detail's Back button |
+| Opening, replay | div with aria-modal, background reachable | Background inert (pager, tabs, flask, labels, header); focus returns; Alt+PageUp/Down blocked; replay closes from Close, Escape or the backdrop only |
+| Reduced motion | System preference in some places, Setup in others | One policy (`src/ui/motion.ts`): system OR Setup, live; CSS, scrolling and the stage all follow |
+| Water | "Water" under a selected past day, but always wrote today; 9 am by device clock | Titled "Water today" and placed outside the day's block; one reminder policy in the record's zone (`waterDue`) |
+| Save status | Hidden in game mode | Dot always; words when not synced ("Saved on this device", "Not saved yet", "Offline · saved on this device"), still visible over the detail |
+| Numbers | "Today 0% · 50% to the climb" | "0 of 2 done" (rest and sick days named); "This week 8% · the climb needs 50%"; insights say points; "Next at camp: …, after 4 more trail days" with the trail-day rule stated |
+| Detail order | Day picker, week ring, water, groups | Day and its habits, then water, then the week and camp; group headings only with more than one group |
+| Scene | Shade to 0.62 black plus 4% zoom from a third of the way down; nav hid at 33% | Shade follows how much the detail covers, max 0.3, no zoom; nav steps aside when the detail reaches the top. Cool rim light on Ari; round, fewer embers; round snow and stars |
+
+Calls made:
+
+- **G-26 Hold is done, tap is options** on the game screen. The flask keeps tap = a glass (a glass is an increment, not a completion).
+- **G-27 The rest sentence is exact**: a rested habit leaves the day's count and keeps its streak; when everything rests the day still counts on the trail; a sick day is paused.
+- **G-28 Camp follows the record**: improvements are derived from trail days, so only a correction of the record can remove one; a reveal is never repeated once seen.
+- **G-29 Trail day** is the user-facing name for a story day: at least one habit held or done, or a rest day.
+
+Measured contrast on the detail glass over a bright fire pixel: ink 11.8:1, muted 5.4:1, the
+trail-day note 5.5:1, warn 7.6:1, frost 7.8:1; chip text over the brightest fire 4.6:1; the
+primary button's dark label on ember 6.0:1. `--dim` (3.2:1) is no longer used for text on pins.
+
+Not done here (needs a choice): the Camp / Today / Journey dock-and-sheet model of sections 5 to
+7. The brief asks for it to be prototyped and compared with this repaired model before either ships.
+
+## Dock preview, framing, the return beat (13 Oct, continued)
+
+Asked for: "continue further" on the audit brief, so steps 4 and 5: prototype the dock model
+next to the repaired tabs, a camera that frames around the UI, one complete emotional interaction,
+and independent life; then the test matrix.
+
+| Piece | Where |
+|---|---|
+| Dock preview: Camp (home, one dock), Today (the dock's list, opened), Journey (Week, Month, Year as one control), Journal | `GameView.applyLayout`, `renderDockTop`, `.game.dock` CSS; `src/ui/layout.ts` |
+| Switch per device in Setup ("Game screen layout"), or `?ui=dock` / `?ui=tabs` | `SetupView.layoutPick` |
+| Camera frames Ari in the open part of the screen: the shift follows the checklist's height and the caption | `Stage.setOcclusion`, `GameView.frameAround` |
+| Return beat: after most of a day away (or missed days) she picks up your cup from beside her, holds it out, sets it at your place; framed from your seat | `Stage.greet(away)`, act `offer` |
+| Her own routine: hands to the fire (cold or low fire), a log pushed in, a look up the trail; every 26 to 60 s, never during anything else, off in reduced motion | `Stage.ambient`, acts `warm`, `tend`, `route` |
+
+Calls made:
+
+- **G-30 Both layouts ship side by side for now**; tabs stay the default. The dock is a preview to compare on real data, not a second permanent system: one of the two goes once Xander picks.
+- **G-31 In the dock, hold is still done and a tap still opens the options** (G-26 holds in both layouts).
+- **G-32 No swiping between places in the dock**: every move is a labelled button, so the world under the dock never fights a swipe.
+- **G-33 The return beat does not fill the cup**: the cup fills only when a day closes (G-19); after an absence she gives it back to you.
+
+Test matrix run (world off unless noted; results, not plans):
+
+| Case | Tabs | Dock |
+|---|---|---|
+| 390×844 portrait, world on | Ari framed above the chips | Ari, hands and fire above the dock |
+| 360×640, 320×568 | All controls on screen (tabs tighten at 340 px) | All on screen |
+| 844×390 landscape | Usable; chips low | Usable; dock covers about half the height |
+| 195×422 (390 px at 200% zoom) | Tabs scroll and keep the current one in view; chips stack | Dock header wraps; rows wrap |
+| Reduced motion, keyboard, screen reader names | Covered by e2e (21 + dock test) | Covered by the dock e2e |
+
+Still untested here: a real phone's soft keyboard over the amount field, iOS Safari, and the
+night scene's darkness on an actual screen.
+
+## Living World plan, Phase 1 (13 Oct)
+
+Asked for (`ASCENT-LIVING-WORLD-INNOVATION-LAYER.md`): keep the tabs, make the HUD really
+disappear, full-width habit rows with completed ones at the bottom. Audit first:
+`docs/audits/living-world.md`.
+
+- **G-34 Tabs are the layout.** The dock preview is removed (supersedes G-30 to G-32); its one
+  useful idea, full-width rows, moved into Today.
+- **G-35 The HUD hides, it does not just dim** (supersedes the 55% rest of the UI audit round). After
+  4.5 s without input the tabs, gear, save dot, water counter, numbers line and trail pins fade out
+  and take no touches. The first touch only wakes them, so it lands on the world and cannot press a
+  hidden control. Not while a sheet or dialog is open, while typing, while keyboard focus is in the
+  controls, during the opening or a replay, or with the detail up. Kept visible: the habits, the
+  story line, a due flask's ring, and save-status words when something is not synced.
+- **G-36 Rows, open first.** One full-width row per habit: still to do (open, attempted, held) on
+  top, settled (done, rested, sick) below, not due last; the usual order inside each. Rows never
+  move while a finger is down or for 0.6 to 0.7 s after a change; then they glide (instantly with
+  reduced motion) and keyboard focus stays on its row.
+- **G-37 The return beat needs a return**: a first visit on a device does not play it.
+
+## Living World plan, Phase 2 (13 Oct)
+
+Decisions Xander made on the plan's questions (§9): weather stays the weekly canon, real
+weather only as ambience; flask tap = +1 and hold = close-up; replays honest, with action times
+recorded from now on; phone shake opt-in and off. Device target: not chosen yet.
+
+- **G-38 Action times are recorded.** Every change to a habit-day appends {when recorded, what it
+  became} to the entry (last 24), stored beside the entries under `acts` in the same month
+  document. A reader that predates it, or a rollback to v10, sees exactly the same entries.
+  Unreadable times are dropped, never the entry. They travel in backups. They are record times:
+  a backfill is recorded when it is entered, and older days have none.
+- **G-39 The flask is a prop in the world.** Tap it on Ari's hip to add a glass; hold it (or the
+  corner ring) for the close-up: she holds it up, the tin shows a fill line, the sheet shows the
+  count and the time of each glass the record has ("2 earlier, time not recorded" otherwise),
+  Remove a glass with Undo, Add a glass. No ml: no glass size is stored. The corner ring is the
+  fallback everywhere. The registry (`Stage.pick`) has the flask only for now.
+- **G-40 Setup shows one part at a time**: Habits (habits, water), You & day (mark, identity, day
+  end, sound, motion), Data (correct, backup, sync), About. Deep links open the right part.
+- **G-41 Environment Lab** behind five taps on the version in About (or `?lab`): a 24-hour dial,
+  presets (dawn, golden, dusk, blue, night, noon), a weather preview, the frame time, Back to
+  live. Preview only: nothing is written, and the record's weather comes back on close.
+
+## Water's cause and effect; Living World Phase 3 (13 Oct)
+
+Asked for: the drink scene stays, with her relief and her fatigue easing as the whole cause and
+effect; Phase 3 for "an average middle range phone as of 2026".
+
+- **G-42 Water shows on Ari, gently.** A tiredness level (0 fresh to at most 0.75) drifts toward
+  what the water record says: how much is left to drink today, whether a glass is due, and how
+  long since the last one. Tired: shoulders down, a heavier head, quicker deeper breathing, now and
+  then a hand to the back of her neck or a glove across her brow. Every glass still plays the
+  drink scene; its sigh of relief drops her tiredness at once, and it stays lower. Reaching the
+  day's goal: one long stretch. The tin's fill line shows what is left to drink (it empties as she
+  drinks); the corner ring shows what you have had. Presentation only: no effect on the story,
+  the climb, streaks or any habit, and never distress (no shivering, no collapse; A-8 stands).
+- **G-43 One light pipeline, every frame.** Your clock → the sun's position (an art-directed
+  latitude of 28°, never your location) → the sky dome (gradient, warm glow toward the sun, halo
+  and disc, a moon at night) → one key light (sun by day, moon by night, switching while both are
+  dim) with a moving shadow over camp → ambient and fog → a cloud layer lit from the sun (golden
+  or silver edges near a low sun) → stars. Continuous in time: tested minute by minute over a day.
+- **G-44 Weather stays the weekly canon** (Xander's choice): the last ended week sets the cloud
+  cover (clear 18%, calm 42%, snow 78%, storm 95%), easing over about 25 s so weather arrives. Real
+  local weather as ambience is not wired yet: it needs a forecast source the page may not reach.
+- **G-45 One wind** (steady part from the weather, gusts that ease in and out) moves the snow,
+  the tree crowns, the flag, the flames and the wind sound. Birds now and then in fair daylight.
+- **G-46 Quality steps with the phone.** Standard (sun shadow 1024) by default; down to light (no
+  sun shadow, 1× resolution) when frames run long for a few seconds, up to high (2048) when there
+  is room. `?quality=low|high` pins it; the Lab shows the frame time, the tier and the sun's
+  elevation. Target: a mid-range 2026 phone at a steady frame rate, never blocking a tap.
+- Not yet (by the plan's own order): god rays and rare skies, a real-weather ambience source, and
+  any increase in mesh detail (Phase 4).
+
+## The flask in view; modelled scenery (13 Oct)
+
+- **G-47 The flask is always where you can see it**: strapped upright to the outside of her bag,
+  on the side facing the camera (beside her at camp, on her back on the trail); on the base camp
+  close-up it waits on the log at her side, in frame. She reaches to the bag for it and puts it
+  back. A soft glint shows when a glass is due. Touch target enlarged. Tested: on Today and Camp
+  the flask projects inside the screen and above the checklist.
+- **G-48 Third-party models only when licensed and downloadable.** Checked the Sketchfab picks
+  (docs/assets/CREDITS.md): three cannot be used (not downloadable, or no licence); the rest need
+  Xander's Sketchfab login to download, and the two backpacks need heavy simplification
+  (237k and 353k triangles) before they fit a mid-range phone. The workspace cannot reach
+  Sketchfab, so downloads come as attachments.
+- **G-49 A modelled forest near camp**: CC0 low-poly pines (three variants) and bushes from
+  Quaternius' Ultimate Nature Pack within 60 m of camp, recoloured to the mountain's palette and
+  swaying in the shared wind; cones beyond. About 125k triangles in 4 draw calls, no shadow
+  casting. Credited in Setup → About. Stored indexed (85 KB). The single page now sits near
+  the publish limit (about 1 MB), so bigger models (a character, backpacks) will be published as
+  separate files beside the page and loaded at run time, with the code-built ones as fallback.
+
+## The year view without edges (13 Oct)
+
+Asked for: "cover the areas with maybe waterfalls in the distance and clouds so we don't see or
+notice the abrupt ends and the view looks good even when zoomed out".
+
+- **G-50 The world beyond the map** (`src/game/horizon.ts`): a ring of distant snow-capped peaks
+  all round (none close to or behind the year camera, where one would fill the frame as a wall);
+  a deck of cloud around the map's edges, below those peaks, thick in the month and year views
+  and thin at camp, lit from the sun like the sky's clouds; three waterfalls laid on the steepest
+  faces of the main range, water scrolling down, mist at their feet.
+- **G-51 The far views see further**: fog starts later and ends further away as the camera pulls
+  back (about 730 m to 3.9 km in the year view instead of 30 m to 1.3 km), so the land keeps its
+  colour instead of turning to grey.
+- **G-52 The valley walls level off above 200 m** into rolling, snowy shoulders (a soft ceiling
+  of 310 to 400 m) instead of rising without end. Nothing the camp or the trail sees changes
+  (all of it is below 200 m); the year view now looks over the walls rather than into a
+  kilometre-high grey slab, which was the abrupt edge on the right of the year view.
+
+## Weather, seasons, light and Ari's answers to them (13 Oct)
+
+Asked for: a light Ari carries when she walks (changeable), a golden hour with bright yellow
+light, god rays and long shadows, clouds and the sky visible from camp on flatter, uneven ground,
+a low camera at camp to see the stars, stars and the moon in its cycle, shake reactions, the kinds
+of weather (rainy, dry, cloudy, dull, windy, snowy) and the seasons, all in combination with the
+time of day, and how she reacts: clothes, shelter, covering her things. The full matrix is in
+`docs/design/weather-and-seasons.md`.
+
+- **G-53 Weather stays the record's canon; the season picks its kind.** The weekly canon (clear,
+  calm, snow, storm) still decides how hard the day is. The season (from the calendar at the
+  preset 28° N) decides what kind of hard: a slipped week is a blizzard in winter, a thunderstorm
+  in spring and summer, a gale in autumn. Calm weeks vary day to day (cloudy, dull, fog, windy,
+  showers) from the date alone, the same on every device. Twelve kinds in all. Rest and sick days
+  stay calm (A-8).
+- **G-54 Sky is real where it can be.** The moon's position and phase come from the date
+  (synodic month from the new moon of 6 Jan 2000): a full moon rises at sunset, a crescent sets
+  soon after the sun, a new moon leaves the night dark; it lights the night only while up, as
+  much as it is lit. About 2,600 stars and a Milky Way wheel about the pole. Art direction: the
+  valley runs 30° west of north, so the camera faces toward the evening sun; the sky turns with it.
+- **G-55 The golden hour** (sun from -2° to 16°): saturated honey light, a warm sky, crepuscular
+  rays in the sky round a low sun, soft god-ray beams across camp, a rim of sunlight along Ari's
+  edges, and the camp camera swings toward the sun (only when it is ahead or to the side).
+- **G-56 Camp sits in a wide, uneven meadow.** The valley walls are pushed back and lowered for a
+  few hundred metres round camp, with knee- to head-high hummocks and hollows, and a long low
+  saddle toward the sunset. Trees keep a wide gap ahead of camp. At night and in the golden hour
+  the camp shots drop low and look up, so the sky, the clouds and the stars fill the top of the
+  frame. Nothing about the route or the week trail changed.
+- **G-57 Ari answers the weather.** Clothes: a rain shell (cape over her and the pack) in rain, a
+  parka with a fur ruff in the cold or snow, a light shirt with rolled sleeves and a straw hat on a
+  hot sunny day, a thicker scarf and mitts when it bites. Camp: a sheet over her bag (the flask
+  moves to the log beside her, always in view) and the woodpile when anything falls, a rain fly
+  over her seat in heavy rain or a blizzard, the tent laced shut, stones on the fly in a gale.
+  Seen changes play as small scenes (she pulls the cape on, covers the bag); unseen ones are just
+  done. Her routine follows the weather and light: shake off rain or brush off snow, fan herself
+  on a hot afternoon (a little thirstier, presentation only), shade her eyes from a low sun, look
+  up at a clear night sky, reach for a firefly or a petal, flinch at near thunder.
+- **G-58 Her light after dark is the person's choice, per device**: a lantern (in her hand on the
+  trail, on the ground beside her at camp), a headlamp (beam where she looks) or a glow stick
+  (on her strap). She lights it when it gets dark (earlier under storm cloud or fog). One point
+  light, always present at zero by day, so dusk never rebuilds the shaders. Stored in this
+  browser only (no schema change, rollback-safe).
+- **G-59 Shake stays opt-in, now in Setup** ("Shake the phone to stir the world", per device; iOS
+  asks once): snow or petals swirl, a gust bends the trees, her lantern swings, the fire throws
+  sparks, the camera jolts a little and she steadies herself and looks at you. It never touches
+  the record. The Lab has a Shake button to preview it.
+- **G-60 Cost on a mid-range phone**: rain, snow and motes move on the GPU (the CPU sets a few
+  uniforms a frame); snow, wetness and the season's tint are one shared shader patch on the
+  world's materials; stars are hidden by day. The tree models are stored gzipped and unpacked in
+  the browser, which keeps the page under the publish limit (about 950 KB).
+
+## Phase 4: the art pass on Ari and the meadow (14 Oct)
+
+- **G-61 Ari, rebuilt from turned shapes**, same joints, poses and proportions: a coat with a
+  chest, a waist, a flared hem, a belt, buckle, placket and toggles; sleeves with cuffs; mitts
+  with thumbs; tapered trousers; walking boots with a rolled sock, a rounded toe and a sole; the
+  hood with a turned-back rim round the face's hollow and its point falling back like a cowl.
+  Still faceless, still Ari. Her scarf tails and rain cape move with the wind and her walk.
+- **G-62 Her bag is now a pack** (the code still calls it the satchel): canvas body, lid, a
+  front pocket carrying your mark, side pockets (the flask rides in one, in view), a bedroll on
+  top and a sleeping mat below, shoulder straps. Same places as before: by her at camp, on her back
+  on the trail.
+- **G-63 The meadow** round camp: about 3,200 instanced grass tufts and 500 wild flowers within
+  30 m, swaying in the shared wind, tinted by the season, sinking under lying snow; flowers full
+  in spring, thinner in summer, gone by autumn. Quality tiers draw 35%, 70% or all of the tufts.
+- **G-64 Nights without a moon keep starlight**: a faint cool light from overhead when the moon is
+  down or thin, so the land and Ari stay readable; her own light still does most of the work.
+
+## Phase 5: honest replays, and the sliders (14 Oct)
+
+- **G-65 A replay tells the day as it was recorded.** Habits come in the order they were
+  recorded, each with its time in the record's own clock ("Qbank · 10:12 → 18:40" when begun and
+  finished at different times); the flask lists its glasses' times. The world shows that day:
+  its season, the weather its week earned, its sun and moon, and the sky moves to each card's
+  recorded hour. Honest about what it cannot know: a day recorded later says "logged later, Thu
+  15 Oct" (and keeps today's sky out of it), and anything without a time says "time not
+  recorded", after the timed ones. Nothing is placed at a time it did not happen
+  (`src/core/timeline.ts`).
+- **G-66 The sliders are one tap away.** Setup → You → The world → "Preview time, season and
+  weather" opens the Environment Lab with four sliders: time of day (with the band it falls in),
+  season (calendar, then the four), weather (the record's, then all twelve kinds) and the moon
+  (tonight's, then any day of its cycle, named by phase). It folds to one line to look at the
+  world, has a Shake button and Back to live, and writes nothing. The About part's five-tap
+  unlock still works.
+
 ## Not yet
 
 - Multiplayer leagues and shared leaderboards (solo by decision).
-- Ari's gear visible on the model; story scenes per chore (M11 onward).
+- Story scenes per chore (M11 onward). A rigged, modelled Ari (needs a model file; the code-built one stays the fallback).
 - Month and year landscapes are camera moves over the same world; a proper year map comes with the
   route art.

@@ -81,6 +81,7 @@ describe('migrations', () => {
       seen: {},
       corrections: {},
       notes: {},
+      expedition: {},
       log: {
         0: (d) => ({ ...d, schema: 1, trail: ['0to1'] }),
         1: (d) => ({ ...d, schema: 2, trail: [...(d.trail as string[]), '1to2'] }),
@@ -94,7 +95,7 @@ describe('migrations', () => {
   });
 
   it('fails loudly on a missing step', () => {
-    expect(() => migrate('log', { schema: 0 }, { profile: {}, habits: {}, seen: {}, corrections: {}, notes: {}, log: {} }, 1)).toThrow();
+    expect(() => migrate('log', { schema: 0 }, { profile: {}, habits: {}, seen: {}, corrections: {}, notes: {}, expedition: {}, log: {} }, 1)).toThrow();
   });
 });
 

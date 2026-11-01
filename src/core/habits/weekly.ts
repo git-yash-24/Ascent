@@ -13,6 +13,9 @@
  *   reaching it earns a 10% head start on next week's gauge. 50 to 69% on the steep line holds.
  * - Planned rest and sick days come out of the plan. A week with 4 or more rested or excused
  *   days cannot climb (hold at best). A week with no plan at all is a rest week: nothing moves.
+ * - Fewer than 3 countable days (7 minus rested and excused days): the week is neutral, shown
+ *   as a rest week. It neither moves Ari nor breaks or extends the weekly chain or comeback count.
+ * - A rest-heavy week never slips: the worst it can do is hold.
  * - Slips never cross the current chapter's base camp, and never exceed one stage a week.
  */
 import { addDays, compareDateKeys, daysInMonth, diffDays, weekStart, weekday } from '../model/date';
@@ -30,6 +33,8 @@ export const CLIMB = {
   comebackCooldownWeeks: 8,
   steepUnlockWeeks: 4,
   restHeavyDays: 4,
+  /** A week needs this many countable days (not rested or excused) to be judged at all. */
+  minCountableDays: 3,
   stagesPerChapter: 4,
 } as const;
 
@@ -155,8 +160,9 @@ export function computeClimb(input: ClimbInput): Climb {
         (lastComeback === null || index - lastComeback >= CLIMB.comebackCooldownWeeks);
       const score = raw === null ? null : Math.min(1, raw + headstart);
 
-      let verdict: Verdict = score === null ? 'rest' : band(score, steep);
-      if (restDays >= CLIMB.restHeavyDays && (verdict === 'summit' || verdict === 'climb')) verdict = 'hold';
+      const neutral = score !== null && 7 - restDays < CLIMB.minCountableDays;
+      let verdict: Verdict = score === null || neutral ? 'rest' : band(score, steep);
+      if (restDays >= CLIMB.restHeavyDays && verdict !== 'rest') verdict = 'hold';
 
       const up = verdict === 'summit' || verdict === 'climb';
       const moved = up ? (comeback ? 2 : 1) : verdict === 'slip' ? -1 : 0;
@@ -175,6 +181,8 @@ export function computeClimb(input: ClimbInput): Climb {
         moved: stageAfter - stage,
         stageAfter,
         headstartOut,
+        restDays,
+        ...(neutral ? { neutral: true } : {}),
       };
 
       if (!ended) {
@@ -184,7 +192,7 @@ export function computeClimb(input: ClimbInput): Climb {
       weeks.push(result);
       stage = stageAfter;
       headstart = headstartOut;
-      if (score !== null) {
+      if (score !== null && !neutral) {
         counted++;
         if (score < CLIMB.climb) {
           missStreak++;

@@ -3,3 +3,7 @@ dist/
 coverage/
 *.log
 .DS_Store
+.sim/
+
+# The built single-file game is shipped in the folder, not in git.
+Play Ascent.html

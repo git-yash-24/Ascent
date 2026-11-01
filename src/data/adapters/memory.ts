@@ -3,13 +3,14 @@
  * by the app when no synced store is available. Stores the same encoded shapes as the artifact
  * database, with failure injection for sync tests.
  */
-import { decodeEntry, encodeEntry, type EncodedEntry } from '../codec';
+import { decodeActs, decodeEntry, encodeActs, encodeEntry, type EncodedActs, type EncodedEntry } from '../codec';
 import type { Backend, DeviceLog, DocKindSingle, RemoteDocs } from '../backend';
 import type { DateKey, Entry, HabitId } from '../../core/model/types';
 
 interface LogBody {
   schema: number;
   days: Record<DateKey, Record<HabitId, EncodedEntry>>;
+  acts?: Record<DateKey, Record<HabitId, EncodedActs>>;
 }
 
 export class MemoryBackend implements Backend {
@@ -45,6 +46,10 @@ export class MemoryBackend implements Backend {
     const day = doc.body.days[date] ?? {};
     day[habit] = encodeEntry(e);
     doc.body.days[date] = day;
+    if (e.acts) {
+      doc.body.acts ??= {};
+      (doc.body.acts[date] ??= {})[habit] = encodeActs(e.acts);
+    }
     this.logs.set(key, doc);
     this.emit();
     if (this.loseAcks) throw new Error('unavailable: acknowledgement lost');
@@ -53,8 +58,12 @@ export class MemoryBackend implements Backend {
   async getEntry(month: string, dev: string, date: DateKey, habit: HabitId): Promise<Entry | undefined> {
     await Promise.resolve();
     this.check();
-    const raw = this.logs.get(`${month}~${dev}`)?.body.days[date]?.[habit];
-    return raw ? decodeEntry(raw, dev) ?? undefined : undefined;
+    const body = this.logs.get(`${month}~${dev}`)?.body;
+    const raw = body?.days[date]?.[habit];
+    const e = raw ? decodeEntry(raw, dev) ?? undefined : undefined;
+    const acts = decodeActs(body?.acts?.[date]?.[habit]);
+    if (e && acts?.length) e.acts = acts;
+    return e;
   }
 
   async putDoc(kind: DocKindSingle, body: object): Promise<void> {

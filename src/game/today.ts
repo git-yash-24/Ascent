@@ -2,20 +2,29 @@
  * Today's sheet: the compact part under the world (chips and the flask), and the organised
  * detail further down. Chips are keyed by habit and updated in place so focus survives saves.
  */
+import { diffDays, weekStart } from '../core/model/date';
 import { entryOn } from '../core/model/entries';
 import { versionOn } from '../core/habits/versions';
 import { CLIMB } from '../core/habits/weekly';
 import { tagOf, type TagFamily } from '../core/tags';
-import type { Habit, HabitDayState, HabitVersion } from '../core/model/types';
+import type { Habit, HabitDayState, HabitVersion, SkipReason } from '../core/model/types';
 import type { Controller, View } from '../ui/controller';
 import { glyph, h } from '../ui/dom';
 import { dayChip, editWindow, longDate, pct, skipLabel, STATE_WORDS, unitOf, VERDICT_WORDS } from '../ui/format';
 import { holdable } from './hold';
+import { campState, momentumStep, waterDue } from '../core/world';
+import { reducedMotion } from '../ui/motion';
 import { bar, dot, section, weekGauge, type OptionsSheet } from './ui';
+import { appNow } from '../core/time/appClock';
 
 const COACH: Record<string, string> = {
-  empty: 'The fire is out. One thing first.',
-  partial: 'Moving. Keep the pace.',
+  empty: 'Embers from last night. One thing first.',
+  first: 'The first morning. One thing, and she sets off.',
+  cold: 'The fire is out. One thing relights it.',
+  partial: 'Moving. Whatever comes next counts.',
+  started: 'A start. The rest can come later.',
+  nearly: 'Nearly there. Camp is close.',
+  evening: 'What you did today counts. Rest when you need to.',
   closed: 'Camp is made. Ari takes the route.',
   rested: 'Rest is part of the climb.',
   excused: 'Get well. The mountain waits.',
@@ -48,7 +57,16 @@ export class TodaySheet {
   private alerts: HTMLElement;
   private water: HTMLElement;
   private body: HTMLElement;
+  private weekEl: HTMLElement;
   private last: View | null = null;
+  private undoBar: HTMLElement;
+  private undoTimer = 0;
+  /** A finger is on the list, or a change was just made: rows keep their places until it settles. */
+  private pressing = false;
+  private settleAt = 0;
+  private resortTimer = 0;
+  /** The "Today is different" panel: open or not, which kind of day, and which habits to keep. */
+  private plan: { open: boolean; reason: SkipReason; keep: Set<string> } = { open: false, reason: 'rest', keep: new Set() };
 
   constructor(
     private readonly app: Controller,
@@ -58,13 +76,24 @@ export class TodaySheet {
     this.caption = h('div', { class: 'caption', 'aria-live': 'off' });
     this.head = h('div', { class: 'sheet-head' });
     this.alerts = h('div', { class: 'alerts' });
-    this.list = h('ul', { class: 'chips', 'aria-label': 'Habits. Tap for done, hold for attempted or rest.' });
-    this.water = h('section', { class: 'flask glass', 'aria-label': 'Water' });
+    this.list = h('ul', { class: 'chips', 'aria-label': 'Habits. Hold to mark done; tap for the amount, attempted or rest.' });
+    this.undoBar = h('div', { class: 'undo', hidden: true, role: 'status' });
+    this.list.addEventListener('pointerdown', () => (this.pressing = true));
+    const release = (): void => {
+      if (!this.pressing) return;
+      this.pressing = false;
+      this.settleAt = performance.now() + 700;
+    };
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    this.water = h('section', { class: 'flask glass', 'aria-label': 'Water today' });
     this.body = h('div', { class: 'detail-body' });
+    this.weekEl = h('div', { class: 'detail-body' });
     // Over the world: only the checklist (and an alert when one needs you).
-    this.compact = h('div', { class: 'compact-today' }, this.alerts, this.list);
-    // Scrolling down: the day picker and week, the flask in full, habits by group.
-    this.detail = h('div', { class: 'detail' }, h('div', { class: 'glass block' }, this.head), this.water, this.body);
+    this.compact = h('div', { class: 'compact-today' }, this.alerts, this.undoBar, this.list, h('span', { id: 'chip-how', class: 'sr-only', text: 'Hold to mark done. Tap for options.' }));
+    // Scrolling down: the day you are logging and its habits first; then water (always today),
+    // then the week and what comes next at camp.
+    this.detail = h('div', { class: 'detail' }, h('div', { class: 'glass block' }, this.head, this.body), this.water, this.weekEl);
     setInterval(() => this.last && this.renderWater(this.last), 60_000);
   }
 
@@ -82,10 +111,20 @@ export class TodaySheet {
     const d = v.derived;
     const day = d.days[v.today];
     const outcome = day?.outcome ?? 'free';
-    const anyLogged = Object.values(day?.states ?? {}).some((s) => s !== 'open' && s !== 'unscheduled' && s !== 'missed');
-    const line = outcome === 'free' ? COACH.free : anyLogged ? COACH[outcome] ?? COACH.partial : COACH.empty;
+    // Water is a tracker, not the plan: a glass alone is not "moving".
+    const anyLogged = Object.entries(day?.states ?? {}).some(([id, s]) => id !== d.water?.habit && s !== 'open' && s !== 'unscheduled' && s !== 'missed');
+    const waiting = d.storyDayEarned === 0 ? COACH.first : momentumStep(d, v.today) >= 3 ? COACH.cold : COACH.empty;
+    const hour = new Date(appNow()).getHours();
+    const progress = day?.progress ?? 0;
+    // The partial line follows the hour and how far along the day is, instead of one push all day.
+    const partial = progress >= 0.75 ? COACH.nearly : hour >= 20 || hour < 4 ? COACH.evening : hour < 11 ? COACH.started : COACH.partial;
+    const line = outcome === 'free' ? COACH.free : anyLogged ? (outcome === 'partial' || outcome === 'inProgress' ? partial : COACH[outcome] ?? partial) : waiting;
+    // A live week is a share of the whole week's plan, so midweek it looks low; show the pace too.
+    const score = d.climb.current?.score ?? 0;
+    const elapsed = (diffDays(weekStart(v.today), v.today) + 1) / 7;
+    const pace = score > 0 && elapsed < 1 ? ` · on pace for ${pct(Math.min(1, score / elapsed))}` : '';
     this.caption.replaceChildren(
-      h('span', { class: 'cap-day', text: `Day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(d.climb.current?.score ?? 0)}` }),
+      h('span', { class: 'cap-day', text: `Trail day ${Math.max(1, d.storyDayEarned)} · Stage ${d.climb.stage + 1} · Week ${pct(score)}${pace}` }),
       h('span', { class: 'cap-line coach', text: line ?? '' }),
     );
   }
@@ -101,20 +140,108 @@ export class TodaySheet {
         ),
       );
     }
-    const cur = v.derived.climb.current;
-    const score = cur?.score ?? 0;
-    const barAt = cur?.steep ? CLIMB.steepBar : CLIMB.climb;
-    const ring = h('div', { class: 'ring', role: 'img', 'aria-label': `This week ${pct(score)}${cur ? `, ${weekWord(score, barAt, cur.verdict)}` : ''}` });
-    ring.style.setProperty('--p', String(Math.round(score * 100)));
-    ring.style.setProperty('--bar', String(Math.round(barAt * 100)));
-    ring.append(h('span', { class: 'ring-v', text: pct(score) }), h('span', { class: 'ring-l', text: 'week' }));
-    const day = v.derived.days[v.viewDate];
-    const f = day?.progress ?? 0;
+    const summary = daySummary(v, this.visible(v));
+    const openCount = this.visible(v).filter((x) => x.state === 'open').length;
+    const toggle = h(
+      'button',
+      { class: 'btn small ghost plan-toggle', type: 'button', id: 'plan-toggle', 'aria-expanded': this.plan.open ? 'true' : 'false', 'aria-controls': 'plan-panel', onclick: () => this.togglePlan() },
+      this.plan.open ? 'Close' : 'Today is different',
+    );
     this.head.replaceChildren(
-      h('div', { class: 'head-l' }, pills, h('p', { class: 'head-sub', text: v.viewDate === v.today ? `Today ${pct(f)} · ${weekWord(score, barAt, cur?.verdict ?? 'hold')}` : `Logging for ${longDate(v.viewDate)}` })),
-      ring,
+      h('div', { class: 'head-l' }, pills, h('p', { class: 'head-sub', text: v.viewDate === v.today ? summary : `Logging for ${longDate(v.viewDate)} · ${summary}` })),
+      ...(openCount > 0 || this.plan.open ? [toggle, ...(this.plan.open ? [this.planPanel(v)] : [])] : []),
     );
     this.head.classList.toggle('past', v.viewDate !== v.today);
+  }
+
+  private togglePlan(): void {
+    this.plan.open = !this.plan.open;
+    this.plan.keep = new Set();
+    if (this.last) this.renderHead(this.last);
+    if (this.plan.open) (document.getElementById('plan-rest') as HTMLElement | null)?.focus();
+    else document.getElementById('plan-toggle')?.focus();
+  }
+
+  /**
+   * One choice for a hard day instead of a skip on every habit. It writes the same entries the
+   * options sheet would (rest, sick, night duty, exam, travel), only on habits still open, and
+   * only after a preview. Nothing new is stored, and one Undo puts every habit back.
+   */
+  private planPanel(v: View): HTMLElement {
+    const open = this.visible(v).filter((x) => x.state === 'open');
+    const kinds: Array<{ reason: SkipReason; id: string; label: string; note: string }> = [
+      { reason: 'rest', id: 'plan-rest', label: 'Rest', note: 'Leaves the count, keeps streaks. The day still counts on the trail.' },
+      { reason: 'sick', id: 'plan-sick', label: 'Sick', note: 'A paused day. The mountain waits.' },
+      { reason: 'night', id: 'plan-night', label: 'Night duty', note: 'Resting what you cannot do on shift.' },
+      { reason: 'exam', id: 'plan-exam', label: 'Exam', note: 'Keep the one or two things that matter; rest the rest.' },
+      { reason: 'travel', id: 'plan-travel', label: 'Travel', note: 'Keep what travels; rest the rest.' },
+    ];
+    const label = skipLabel(this.plan.reason).toLowerCase();
+    const resting = open.filter((x) => !this.plan.keep.has(x.h.id));
+    const picker = h('div', { class: 'opts-grid', role: 'radiogroup', 'aria-label': 'Kind of day' });
+    for (const k of kinds) {
+      picker.append(
+        h(
+          'button',
+          { class: 'opt', id: k.id, type: 'button', role: 'radio', 'aria-checked': k.reason === this.plan.reason ? 'true' : 'false', onclick: () => ((this.plan.reason = k.reason), this.last && this.renderHead(this.last), document.getElementById(k.id)?.focus()) },
+          k.label,
+        ),
+      );
+    }
+    const keepList = h('ul', { class: 'plan-keep', 'aria-label': 'Habits to keep today' });
+    for (const x of open) {
+      const id = `plan-keep-${x.h.id}`;
+      const box = h('input', { type: 'checkbox', id, ...(this.plan.keep.has(x.h.id) ? { checked: true } : {}) }) as HTMLInputElement;
+      box.addEventListener('change', () => {
+        if (box.checked) this.plan.keep.add(x.h.id);
+        else this.plan.keep.delete(x.h.id);
+        if (this.last) this.renderHead(this.last);
+        document.getElementById(id)?.focus();
+      });
+      keepList.append(h('li', {}, box, h('label', { for: id, text: ` Keep ${x.h.name}` })));
+    }
+    const note = kinds.find((k) => k.reason === this.plan.reason)?.note ?? '';
+    const apply = h('button', { class: 'btn primary', type: 'button', disabled: resting.length === 0, onclick: () => this.applyPlan(resting.map((x) => x.h.id), this.plan.reason) }, resting.length === 0 ? 'Nothing to change' : `Set ${resting.length} to ${label}`);
+    return h(
+      'div',
+      { class: 'plan', id: 'plan-panel' },
+      picker,
+      h('p', { class: 'opts-hint', text: note }),
+      keepList,
+      h('p', { class: 'opts-hint', 'aria-live': 'polite', text: resting.length === 0 ? 'Every open habit is kept.' : `${open.length} open · ${resting.length} will be marked ${label} · ${open.length - resting.length} kept open. Done ones stay as they are.` }),
+      apply,
+    );
+  }
+
+  private applyPlan(ids: string[], reason: SkipReason): void {
+    const v = this.app.view();
+    const date = v.viewDate;
+    const before = ids.map((id) => ({ id, prev: this.app.entryFields(date, id) }));
+    this.settleAt = performance.now() + 600;
+    const done: typeof before = [];
+    for (const b of before) {
+      const r = this.app.skip(b.id, reason);
+      if (!r.ok) {
+        this.hooks.say(r.message);
+        break;
+      }
+      done.push(b);
+    }
+    this.plan = { open: false, reason: 'rest', keep: new Set() };
+    window.clearTimeout(this.undoTimer);
+    const undo = h('button', { class: 'btn small ghost', type: 'button' }, 'Undo all');
+    undo.addEventListener('click', () => {
+      window.clearTimeout(this.undoTimer);
+      this.undoBar.hidden = true;
+      this.settleAt = performance.now() + 600;
+      for (const b of done) this.app.revert(date, b.id, b.prev);
+      this.hooks.say(`${done.length} habits put back.`);
+    });
+    this.undoBar.replaceChildren(h('span', { text: `${done.length} habits · ${skipLabel(reason).toLowerCase()}` }), undo);
+    this.undoBar.hidden = false;
+    this.undoTimer = window.setTimeout(() => (this.undoBar.hidden = true), 10000);
+    this.hooks.say(`${done.length} habits marked ${skipLabel(reason).toLowerCase()}.`);
+    if (this.last) this.render(this.app.view());
   }
 
   private renderAlerts(v: View): void {
@@ -169,7 +296,11 @@ export class TodaySheet {
   }
 
   private renderChips(v: View): void {
-    const items = this.visible(v);
+    // Open first, settled (done or rested) below, not due last; the usual order inside each.
+    const items = this.visible(v)
+      .map((x, i) => ({ x, i }))
+      .sort((a, b) => rank(a.x.state) - rank(b.x.state) || a.i - b.i)
+      .map(({ x }) => x);
     const keep = new Set<string>();
     const order: HTMLLIElement[] = [];
     for (const it of items) {
@@ -189,20 +320,51 @@ export class TodaySheet {
       }
     }
     for (const c of [...this.list.children]) if (!order.includes(c as HTMLLIElement)) c.remove();
+    const now = performance.now();
+    if (this.pressing || now < this.settleAt) {
+      // Never move a row under a finger or straight after a change: new rows join the end, the
+      // rest wait until the press is over.
+      for (const el of order) if (el.parentElement !== this.list) this.list.append(el);
+      window.clearTimeout(this.resortTimer);
+      this.resortTimer = window.setTimeout(() => this.last && this.renderChips(this.last), Math.max(80, this.settleAt - now + 20));
+    } else this.reorder(order);
+    if (items.length === 0) this.list.replaceChildren(h('li', { class: 'empty', text: 'No habits yet. Add one in Setup.' }));
+  }
+
+  /** Move rows to their new places, gliding from where they were; focus stays on its row. */
+  private reorder(order: HTMLLIElement[]): void {
+    const same = order.every((el, i) => this.list.children[i] === el);
+    if (same) return;
+    const before = new Map<HTMLLIElement, number>();
+    for (const el of order) if (el.parentElement === this.list) before.set(el, el.getBoundingClientRect().top);
+    const focused = document.activeElement as HTMLElement | null;
+    const hadFocus = focused && this.list.contains(focused) ? focused : null;
     order.forEach((el, i) => {
       if (this.list.children[i] !== el) this.list.insertBefore(el, this.list.children[i] ?? null);
     });
-    if (items.length === 0) this.list.replaceChildren(h('li', { class: 'empty', text: 'No habits yet. Add one in Setup.' }));
+    if (hadFocus && document.activeElement !== hadFocus) hadFocus.focus({ preventScroll: true });
+    if (reducedMotion()) return;
+    for (const [el, top] of before) {
+      const dy = top - el.getBoundingClientRect().top;
+      if (Math.abs(dy) < 1) continue;
+      el.style.transition = 'none';
+      el.style.transform = `translateY(${dy}px)`;
+      void el.offsetWidth;
+      el.style.transition = 'transform .32s cubic-bezier(.2, .8, .2, 1)';
+      el.style.transform = '';
+    }
   }
 
   private buildChip(hb: Habit): Chip {
     const g = h('span', { class: 'gchip-glyph' });
     const name = h('span', { class: 'gchip-name' });
     const val = h('span', { class: 'gchip-val' });
-    const btn = h('button', { class: 'gchip', type: 'button', role: 'checkbox', 'aria-haspopup': 'dialog', 'data-id': hb.id }, g, h('span', { class: 'gchip-text' }, name, val));
+    const btn = h('button', { class: 'gchip', type: 'button', 'aria-haspopup': 'dialog', 'aria-describedby': 'chip-how', 'data-id': hb.id }, g, h('span', { class: 'gchip-text' }, name, val));
+    // Hold is done (the quick way); a tap opens everything else, Mark done included.
     holdable(btn, {
-      tap: (p) => this.tap(hb.id, p),
-      hold: () => void this.hold(hb.id, btn),
+      tap: (p) => void this.options(hb.id, btn, p.via === 'key', p.via === 'pointer' ? p : undefined),
+      hold: () => this.markDone(hb.id, btn),
+      menu: () => void this.options(hb.id, btn, true),
     });
     return { li: h('li', {}, btn), btn, glyph: g, name, val };
   }
@@ -227,28 +389,41 @@ export class TodaySheet {
     else if (ver.time) val = clockText(ver.time);
     else if (state === 'unscheduled') val = 'not due';
     c.val.textContent = val;
-    c.btn.setAttribute('aria-checked', state === 'fulfilled' ? 'true' : state === 'held' || state === 'attempted' || state === 'skipped' ? 'mixed' : 'false');
     c.btn.setAttribute('aria-label', `${hb.name}, ${family.name}, ${STATE_WORDS[state]}${val && val !== 'not due' ? `, ${val}` : ''}`);
   }
 
-  private tap(id: string, p: { x: number; y: number }): void {
+  /** Hold: done, or empty again when it already was. Saved first; the world answers after. */
+  private markDone(id: string, el: HTMLElement): void {
+    const v0 = this.app.view();
+    const date = v0.viewDate;
+    const prev = this.app.entryFields(date, id);
     const t0 = performance.now();
+    this.settleAt = t0 + 700;
     const r = this.app.tapDone(id);
     (window as unknown as { __ascent?: { tapToStored: number[] } }).__ascent?.tapToStored.push(performance.now() - t0);
     this.report(id, r);
+    if (!r.ok) return;
     const v = this.app.view();
-    const state = v.derived.days[v.viewDate]?.states[id];
-    if (r.ok) this.hooks.pulse(p.x, p.y, state === 'fulfilled');
+    const state = v.derived.days[date]?.states[id];
+    const b = el.getBoundingClientRect();
+    this.hooks.pulse(b.left + b.width / 2, b.top + b.height / 2, state === 'fulfilled');
+    this.offerUndo(id, date, prev);
   }
 
-  private async hold(id: string, opener: HTMLElement): Promise<void> {
+  /** Tap: the options sheet (amount, mark done, attempted, rest). */
+  private async options(id: string, opener: HTMLElement, typing: boolean, from?: { x: number; y: number }): Promise<void> {
     const v = this.app.view();
     const hb = v.snapshot.habits.habits.find((x) => x.id === id);
     const ver = hb ? versionOn(hb, v.viewDate) : undefined;
     if (!hb || !ver) return;
-    const cur = entryOn(v.snapshot, v.viewDate, id)?.v;
-    const choice = await this.opts.open({ name: hb.name, family: tagOf(hb).family, ver, opener, ...(cur !== undefined ? { current: cur } : {}) });
+    const date = v.viewDate;
+    const prev = this.app.entryFields(date, id);
+    const cur = entryOn(v.snapshot, date, id)?.v;
+    const done = v.derived.days[date]?.states[id] === 'fulfilled';
+    const day = date === v.today ? null : longDate(date);
+    const choice = await this.opts.open({ name: hb.name, family: tagOf(hb).family, ver, opener, done, day, typing, ...(from ? { from: { x: from.x, y: from.y } } : {}), ...(cur !== undefined ? { current: cur } : {}) });
     if (!choice) return;
+    this.settleAt = performance.now() + 600;
     const r =
       choice.kind === 'attempt'
         ? choice.amount !== undefined
@@ -258,8 +433,36 @@ export class TodaySheet {
           ? this.app.skip(id, choice.reason)
           : choice.kind === 'clear'
             ? this.app.clearEntry(id)
-            : this.app.tapDone(id);
+            : this.app.complete(id);
     this.report(id, r);
+    if (!r.ok) return;
+    const state = this.app.view().derived.days[date]?.states[id];
+    const b = opener.getBoundingClientRect();
+    if (choice.kind === 'done' || choice.kind === 'attempt') this.hooks.pulse(b.left + b.width / 2, b.top + b.height / 2, state === 'fulfilled');
+    this.offerUndo(id, date, prev);
+  }
+
+  /** A few seconds to take it back: Undo restores exactly what was there, not an empty entry. */
+  private offerUndo(id: string, date: string, prev: { v?: number; skip?: SkipReason } | null): void {
+    const v = this.app.view();
+    const hb = v.snapshot.habits.habits.find((x) => x.id === id);
+    const state = v.derived.days[date]?.states[id] ?? 'open';
+    window.clearTimeout(this.undoTimer);
+    const undo = h('button', { class: 'btn small ghost', type: 'button' }, 'Undo');
+    undo.addEventListener('click', () => {
+      window.clearTimeout(this.undoTimer);
+      this.undoBar.hidden = true;
+      this.settleAt = performance.now() + 600;
+      const r = this.app.revert(date, id, prev);
+      this.hooks.say(r.ok ? `${hb?.name ?? 'Habit'}: undone.` : r.message);
+      (this.chips.get(id)?.btn as HTMLElement | undefined)?.focus();
+    });
+    this.undoBar.replaceChildren(h('span', { text: `${hb?.name ?? 'Habit'} · ${STATE_WORDS[state]}` }), undo);
+    this.undoBar.hidden = false;
+    this.undoTimer = window.setTimeout(() => {
+      if (!this.undoBar.contains(document.activeElement)) this.undoBar.hidden = true;
+      else this.undoTimer = window.setTimeout(() => (this.undoBar.hidden = true), 4000);
+    }, 6000);
   }
 
   private report(id: string, r: { ok: true } | { ok: false; message: string }): void {
@@ -277,9 +480,8 @@ export class TodaySheet {
     const w = v.derived.water;
     this.water.hidden = !w;
     if (!w) return;
-    const since = w.lastAt === null ? null : Math.floor((Date.now() - w.lastAt) / 60_000);
     const full = w.today >= w.target;
-    const due = !full && (since === null ? new Date().getHours() >= 9 : since >= 120);
+    const due = waterDue(w, appNow(), v.snapshot.profile?.settings.timeZone);
     this.water.dataset.due = String(due);
     const cells = h('span', { class: 'flask-cells', 'aria-hidden': 'true' });
     for (let i = 0; i < w.target; i++) cells.append(h('span', { class: i < w.today ? 'fc on' : 'fc' }));
@@ -352,22 +554,27 @@ export class TodaySheet {
       ], pct(score)),
       h('div', { class: 'g-legend', 'aria-hidden': 'true' }, h('span', { text: '30% hold' }), h('span', { text: `${Math.round(barAt * 100)}% climb` }), h('span', { text: '85% summit' })),
     );
-    this.body.replaceChildren(h('div', { class: 'glass block' }, section('By group', ...groups)), h('div', { class: 'glass block' }, week));
+    // Group headings only earn their place with more than one group.
+    const rows = fams.size > 1 ? groups : [...fams.values()].flatMap((f) => f.rows);
+    this.body.replaceChildren(...rows);
+    const ring = h('div', { class: 'ring', role: 'img', 'aria-label': `This week ${pct(score)}; the climb needs ${Math.round(barAt * 100)}%` });
+    ring.style.setProperty('--p', String(Math.round(score * 100)));
+    ring.style.setProperty('--bar', String(Math.round(barAt * 100)));
+    ring.append(h('span', { class: 'ring-v', text: pct(score) }), h('span', { class: 'ring-l', text: 'week' }));
+    // Score and threshold side by side, above the gauge.
+    const line = week.querySelector('.g-line')!;
+    const ref = line.nextSibling;
+    const top = h('div', { class: 'week-top' }, ring, line);
+    week.insertBefore(top, ref);
+    this.weekEl.replaceChildren(h('div', { class: 'glass block' }, week, nextAtCamp(v.derived.storyDayEarned)));
   }
 }
 
-function weekWord(score: number, bar: number, verdict: string): string {
-  if (verdict === 'rest') return 'rest week';
-  if (score >= CLIMB.summit) return 'summit push';
-  if (score >= bar) return 'climb secured';
-  return `${Math.ceil((bar - score) * 100)}% to the climb`;
-}
-
 function weekLong(score: number, bar: number, verdict: string, comeback: boolean, headstart: number): string {
-  const bits = [verdict === 'rest' ? 'Rest week' : score >= bar ? VERDICT_WORDS[score >= CLIMB.summit ? 'summit' : 'climb'].now : `${Math.ceil((bar - score) * 100)}% to the climb`];
+  const bits = [verdict === 'rest' ? 'Rest week' : score >= bar ? VERDICT_WORDS[score >= CLIMB.summit ? 'summit' : 'climb'].now : `the climb needs ${Math.round(bar * 100)}%`];
   if (headstart > 0) bits.push(`${Math.round(headstart * 100)}% head start`);
   if (comeback) bits.push('comeback climb: two stages if you make it');
-  return `${pct(score)} · ${bits.join(' · ')}`;
+  return `This week ${pct(score)} · ${bits.join(' · ')}`;
 }
 
 function fmt(n: number): string {
@@ -380,3 +587,36 @@ function clockText(t: string): string {
   return `${h12}:${String(mm ?? 0).padStart(2, '0')} ${(hh ?? 0) < 12 ? 'am' : 'pm'}`;
 }
 
+
+/**
+ * The next thing Ari makes at camp, and honestly how far off it is. Trail days are the story
+ * clock: days with at least one habit held or done, or rested; sick days and misses do not count.
+ */
+function nextAtCamp(storyDay: number): HTMLElement | null {
+  const n = campState(storyDay).next;
+  if (!n) return null;
+  return h(
+    'div',
+    { class: 'head-next' },
+    h('p', { text: `Next at camp: ${n.name}, after ${n.inDays} more trail ${n.inDays === 1 ? 'day' : 'days'}.` }),
+    h('p', { class: 'head-def', text: 'A trail day is any day with at least one habit held or done, or a rest day.' }),
+  );
+}
+
+/** Sorting: what still needs you, then what is settled, then what is not due today. */
+function rank(s: HabitDayState): number {
+  return s === 'fulfilled' || s === 'skipped' ? 1 : s === 'unscheduled' ? 2 : 0;
+}
+
+/** What the day stands at, in counts, never a percentage that hides what it is out of. */
+function daySummary(v: View, items: Array<{ state: HabitDayState }>): string {
+  const out = v.derived.days[v.viewDate]?.outcome;
+  if (out === 'rested') return 'Rest day: everything rested';
+  if (out === 'excused') return 'Sick day: paused';
+  const due = items.filter((i) => i.state !== 'unscheduled' && i.state !== 'skipped');
+  if (due.length === 0) return 'Nothing due';
+  const done = due.filter((i) => i.state === 'fulfilled').length;
+  const held = due.filter((i) => i.state === 'held').length;
+  const rest = items.filter((i) => i.state === 'skipped').length;
+  return [`${done} of ${due.length} done`, held ? `${held} held` : '', rest ? `${rest} resting` : ''].filter(Boolean).join(' · ');
+}

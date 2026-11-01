@@ -33,8 +33,20 @@ export function buildFlask(): THREE.Group {
   neck.position.y = 0.1;
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.025, 6), lambert('#2d2f33'));
   cap.position.y = 0.13;
-  g.add(body, sleeve, neck, cap);
+  // A pale band on the tin where the water sits: the fill line, seen in the close-up.
+  const line = new THREE.Mesh(new THREE.CylinderGeometry(0.057, 0.057, 0.01, 12, 1, true), new THREE.MeshBasicMaterial({ color: '#bfeaff', transparent: true, opacity: 0.85, side: THREE.DoubleSide }));
+  line.name = 'level';
+  // An invisible, generous touch target, so the flask can be tapped in the world.
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+  hit.name = 'hit';
+  g.add(body, sleeve, neck, cap, line, hit);
   g.userData.mouth = new THREE.Vector3(0, 0.14, 0);
+  /** 0 empty to 1 full: where the fill line sits on the tin. */
+  g.userData.setLevel = (u: number): void => {
+    line.visible = u > 0.02;
+    line.position.y = -0.075 + Math.max(0, Math.min(1, u)) * 0.15;
+  };
+  (g.userData.setLevel as (u: number) => void)(0);
   return shadowed(g);
 }
 

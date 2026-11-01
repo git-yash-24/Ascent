@@ -104,7 +104,9 @@ export class WeekSheet {
       days,
     );
     if (focused) (this.compact.querySelector(`[data-date="${focused}"]`) as HTMLElement | null)?.focus();
+    const rh = rhythm(c.weeks);
     this.detail.replaceChildren(
+      rh ? h('p', { class: 'g-line rhythm', id: 'week-rhythm', text: rh }) : '',
       h('div', { class: 'g-stats' }, tiny('week streak', String(c.weeklyChain)), tiny('head start', `${Math.round((cur?.headstartIn ?? 0) * 100)}%`), tiny('stage', `${c.stage + 1}`)),
       h('div', { class: 'glass block' }, section('Each habit this week', ...standingRows(list, (s) => s.thisWeek, (s) => `${s.group.name}${s.chain > 1 ? ` · streak ${s.chain}` : ''}`))),
       past.length
@@ -200,7 +202,7 @@ export class YearSheet {
     const c = v.derived.climb;
     const d = v.derived;
     this.caption.replaceChildren(
-      h('span', { class: 'cap-day', text: `Chapter ${c.chapter + 1} · Stage ${c.stage + 1}` }),
+      h('span', { class: 'cap-day', text: `${v.snapshot.expedition.name ? `${v.snapshot.expedition.name} · ` : ''}Chapter ${c.chapter + 1} · Stage ${c.stage + 1}` }),
       h('span', { class: 'cap-line', text: `${d.lifetime.daysShownUp} ${d.lifetime.daysShownUp === 1 ? 'day' : 'days'} on the mountain` }),
     );
     const inChapter = c.stage % CLIMB.stagesPerChapter;
@@ -245,11 +247,23 @@ function key(cls: string, label: string): HTMLElement {
   return h('span', { class: 'key-i' }, h('span', { class: `key-sw ${cls}` }), label);
 }
 
+/**
+ * Your rhythm: the middle of your last judged weeks, as information only. It compares you with
+ * yourself, never with a target, and never changes the climb.
+ */
+export function rhythm(weeks: { score: number | null; verdict: Verdict; neutral?: boolean }[]): string | null {
+  const judged = weeks.filter((w) => w.score !== null && w.verdict !== 'rest' && !w.neutral).slice(-4);
+  if (judged.length < 2) return null;
+  const s = judged.map((w) => w.score as number).sort((a, b) => a - b);
+  const mid = s.length % 2 ? s[(s.length - 1) / 2]! : (s[s.length / 2 - 1]! + s[s.length / 2]!) / 2;
+  return `Your rhythm: about ${Math.round(mid * 100)}% a week over your last ${judged.length} weeks.`;
+}
+
 function verdictLine(verdict: Verdict, score: number, barAt: number): string {
   if (verdict === 'rest') return 'Rest week';
   if (score >= CLIMB.summit) return 'Summit push';
   if (score >= barAt) return 'Climb secured';
-  return `${Math.ceil((barAt - score) * 100)}% to the climb`;
+  return `This week ${Math.round(score * 100)}% · the climb needs ${Math.round(barAt * 100)}%`;
 }
 
 function short(d: DateKey): string {

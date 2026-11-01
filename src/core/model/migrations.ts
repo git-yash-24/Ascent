@@ -6,7 +6,7 @@
  * schema n to n + 1, tested against stored samples of every earlier schema.
  */
 import { CURRENT_SCHEMA, parse, type DocKind, type ParseResult } from './schemas';
-import type { CorrectionsDoc, HabitsDoc, MonthLog, NotesDoc, Profile, SeenDoc } from './types';
+import type { CorrectionsDoc, HabitsDoc, MonthLog, ExpeditionDoc, NotesDoc, Profile, SeenDoc } from './types';
 
 export type Migration = (doc: Record<string, unknown>) => Record<string, unknown>;
 
@@ -43,6 +43,7 @@ export const MIGRATIONS: MigrationTable = {
     2: (d) => ({ ...d, schema: 3 }),
   },
   notes: { 0: (d) => ({ schema: 1, entries: isObject(d.entries) ? d.entries : {} }) },
+  expedition: { 0: (d) => ({ ...d, schema: 1 }) },
   log: { 0: (d) => ({ ...d, schema: 1, days: isObject(d.days) ? d.days : {} }) },
   seen: {
     0: (d) => ({
@@ -111,4 +112,5 @@ export interface LoadedDoc {
   seen: SeenDoc;
   corrections: CorrectionsDoc;
   notes: NotesDoc;
+  expedition: ExpeditionDoc;
 }

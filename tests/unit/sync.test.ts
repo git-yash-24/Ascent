@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { entryOn } from '../../src/core/model/entries';
 import { MemoryBackend } from '../../src/data/adapters/memory';
 import { ArtifactDbBackend } from '../../src/data/adapters/artifactDb';
-import { SyncedStore, type StoreOptions } from '../../src/data/store';
+import { CACHE_KEY, SyncedStore, type StoreOptions } from '../../src/data/store';
 import { MemoryKV } from '../../src/data/sync/journal';
 import { FakeDb } from '../fixtures/fakeDb';
 import { Q, R } from '../fixtures/build';
@@ -183,6 +183,21 @@ describe('write path', () => {
 });
 
 describe('open', () => {
+  it('a copy cached by an older version opens with the newer documents empty', async () => {
+    const kv = new MemoryKV();
+    const old = { schema: 1, entries: {} };
+    kv.set(CACHE_KEY, JSON.stringify({ savedAt: 1, snapshot: { profile: null, habits: { schema: 3, habits: [Q(D), R(D)] }, months: {}, seen: { schema: 1, presentedStoryDay: 0, episodes: [], moments: [], records: [] }, corrections: { schema: 1, items: [] }, notes: old } }));
+    const backend = new MemoryBackend();
+    backend.offline = true;
+    const seen: unknown[] = [];
+    const s = store({ backend, kv });
+    s.onChange((st) => seen.push(st.snapshot.expedition));
+    await s.open();
+    expect(s.current.snapshot.expedition).toEqual({ schema: 1 });
+    expect(seen.every((e) => e !== undefined)).toBe(true);
+    expect(s.current.snapshot.habits.habits).toHaveLength(2);
+  });
+
   it('store unavailable at open: last synced copy, logging still allowed, then reconnects', async () => {
     const backend = new MemoryBackend();
     const kv = new MemoryKV();

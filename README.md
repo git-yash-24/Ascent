@@ -6,11 +6,20 @@ Planning documents (claude.ai):
 
 - Master plan, stage 1 audit, stage 2 specification, story bible, test matrix and build plan.
 
+## Play it on this computer
+
+- **No install:** double-click `Play Ascent.html`. It is the whole game in one file and works
+  offline in Chrome, Edge or Firefox. Progress is saved in that browser on this computer.
+- **Live development:** double-click `start.bat` (needs Node.js 20 or newer from nodejs.org).
+  It installs once, then opens the game at http://localhost:5173 and reloads on every save.
+- `Play Ascent.html` is rebuilt with `npm run play`.
+
 ## Commands
 
 | Command | Does |
 | --- | --- |
 | `npm run dev` | local dev server |
+| `npm run play` | build the single-file `Play Ascent.html` at the project root |
 | `npm run typecheck` | strict TypeScript check |
 | `npm test` | unit and property tests |
 | `npm run artifact` | build, then write `dist/artifact.html` in the shape the Artifact tool publishes |

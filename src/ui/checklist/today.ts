@@ -24,6 +24,7 @@ import {
   unitOf,
   VERDICT_WORDS,
 } from '../format';
+import { appNow, appDate } from '../../core/time/appClock';
 
 interface Row {
   li: HTMLLIElement;
@@ -136,7 +137,7 @@ export class TodayView {
     this.water.hidden = !w;
     if (!w) return;
     const full = w.today >= w.target;
-    const since = w.lastAt === null ? null : Math.floor((Date.now() - w.lastAt) / 60_000);
+    const since = w.lastAt === null ? null : Math.floor((appNow() - w.lastAt) / 60_000);
     // In-app reminder: two hours without a glass, or none yet by nine in the morning.
     const due = !full && (since === null ? nowHHMM() >= '09:00' : since >= WATER_EVERY_MIN);
     this.water.dataset.due = due ? 'true' : 'false';
@@ -480,7 +481,7 @@ function monthDates(d: DateKey): DateKey[] {
 const WATER_EVERY_MIN = 120;
 
 function nowHHMM(): string {
-  const d = new Date();
+  const d = appDate();
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
@@ -510,7 +511,7 @@ function weekText(score: number, bar: number, verdict: string, comeback: boolean
   const extra = comeback ? ' · comeback climb' : '';
   if (verdict === 'rest') return 'Rest week';
   if (score >= bar) return `${pct(score)} · ${VERDICT_WORDS[verdict === 'summit' ? 'summit' : 'climb'].now}${extra}`;
-  return `${pct(score)} · ${Math.ceil((bar - score) * 100)}% to the climb${extra}`;
+  return `${pct(score)} · the climb needs ${Math.round(bar * 100)}%${extra}`;
 }
 
 function meter(label: string, value: number, text: string, marks: Array<{ at: number; label: string }>, kind: string): HTMLElement {

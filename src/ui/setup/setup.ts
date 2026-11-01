@@ -12,6 +12,11 @@ import { clear, h } from '../dom';
 import { habitSummary, longDate, shortDate, SKIP_REASONS, skipLabel } from '../format';
 import { HabitForm } from './habitForm';
 import { tagOf } from '../../core/tags';
+import { EXPEDITION_NAME_MAX } from '../../core/model/schemas';
+import { markPicker } from '../../game/onboard';
+import { labUnlocked, openLab } from '../lab';
+import { askMotion, LIGHT_STYLES, setWorldPrefs, worldPrefs } from '../worldPrefs';
+import { TRIAL_DAYS } from '../../data/trial';
 
 export interface Saver {
   /** Offer a file to the viewer. Resolves false when declined or unavailable. */
@@ -60,12 +65,55 @@ export class SetupView {
     if (r.ok) this.render(this.app.view());
   }
 
+  /** One part of Setup at a time (Living World plan F): habits, you and your day, data, about. */
+  private part: Part = 'habits';
+
   render(v: View, section?: string): void {
     const focusId = (document.activeElement as HTMLElement | null)?.id;
+    if (section) this.part = PART_OF[section] ?? this.part;
     clear(this.body);
-    this.body.append(this.habits(v), this.water(v), this.settings(v), this.correct(v), this.backup(v), this.sync(v));
+    const tabs = h('div', { class: 'pills setup-parts', role: 'group', 'aria-label': 'Setup sections' });
+    for (const [id, label] of PARTS) {
+      const b = h('button', { class: 'pill', type: 'button', 'aria-pressed': String(this.part === id) }, label);
+      b.addEventListener('click', () => {
+        this.part = id;
+        this.render(this.app.view());
+        (this.body.querySelector('.setup-parts [aria-pressed="true"]') as HTMLElement | null)?.focus();
+      });
+      tabs.append(b);
+    }
+    const parts: Record<Part, () => HTMLElement[]> = {
+      habits: () => [this.habits(v), this.water(v)],
+      you: () => [this.expedition(v), this.settings(v)],
+      data: () => [this.correct(v), this.trial(v), this.backup(v), this.sync(v)],
+      about: () => [this.about()],
+    };
+    this.body.append(tabs, ...parts[this.part]());
     if (section) document.getElementById(section)?.scrollIntoView({ block: 'start' });
     if (focusId) document.getElementById(focusId)?.focus();
+  }
+
+  /** The version, and, once asked for, the Environment Lab (a preview tool; it never writes). */
+  private about(): HTMLElement {
+    const ver = h('button', { class: 'linklike', type: 'button', text: `Ascent ${this.appVersion}` });
+    let taps = 0;
+    ver.addEventListener('click', () => {
+      if (++taps >= 5) {
+        labUnlocked(true);
+        this.say('Environment Lab unlocked on this device.');
+        this.render(this.app.view());
+      }
+    });
+    const lab = labUnlocked()
+      ? h('div', { class: 'field' }, h('a', { class: 'btn', href: '#today', onclick: () => openLab() }, 'Open the Environment Lab'), h('p', { class: 'hint', text: 'Previews light, time and weather over the camp. It never changes your record, the story or the climb.' }))
+      : null;
+    const credits = h(
+      'div',
+      { class: 'field' },
+      h('span', { class: 'label', text: 'Credits' }),
+      h('p', { class: 'hint', text: 'Pines and bushes near camp: Quaternius, Ultimate Nature Pack (CC0, public domain).' }),
+    );
+    return section('setup-about', 'About', null, h('p', {}, ver), h('p', { class: 'hint', text: 'Your record lives on your account and on this device. Backups are in Data.' }), credits, lab);
   }
 
   // Habits ---------------------------------------------------------------------------------
@@ -169,6 +217,33 @@ export class SetupView {
     );
   }
 
+  // Your expedition -------------------------------------------------------------------------
+
+  private expedition(v: View): HTMLElement {
+    const ex = v.snapshot.expedition;
+    if (!v.snapshot.profile) return section('setup-expedition', 'Your expedition', 'Finish the first setup to choose a mark.');
+    const pick = markPicker({ ...(ex.symbol ? { symbol: ex.symbol } : {}), ...(ex.accent ? { accent: ex.accent } : {}) });
+    const name = h('input', { id: 'set-exp-name', type: 'text', maxlength: String(EXPEDITION_NAME_MAX), placeholder: 'The long winter', autocomplete: 'off' });
+    name.value = ex.name ?? '';
+    const save = h('button', { class: 'btn primary', text: 'Save mark' });
+    save.addEventListener('click', () => {
+      const m = pick.value();
+      this.say(this.app.saveExpedition({ name: name.value, symbol: m.symbol ?? null, accent: m.accent ?? null }), 'Saved. Ari repaints the flag tonight.');
+    });
+    const clearMark = h('button', { class: 'btn ghost', text: 'No mark' });
+    clearMark.addEventListener('click', () => this.act(this.app.saveExpedition({ symbol: null, accent: null }), 'Mark removed.'));
+    const replay = h('a', { class: 'btn ghost', href: '#today', text: 'Watch the opening again' });
+    replay.addEventListener('click', () => this.app.saveExpedition({ introOn: null }));
+    return section(
+      'setup-expedition',
+      'Your expedition',
+      'Optional. Ari carries your mark on the flag and the pack, and carves it at camp.',
+      h('div', { class: 'field' }, h('span', { class: 'label', text: 'Mark and colour' }), pick.el),
+      h('div', { class: 'field' }, h('label', { for: 'set-exp-name', text: 'Expedition name (optional)' }), name),
+      h('div', { class: 'row-actions' }, save, clearMark, replay),
+    );
+  }
+
   // Settings -------------------------------------------------------------------------------
 
   private settings(v: View): HTMLElement {
@@ -204,6 +279,41 @@ export class SetupView {
       motionRow,
       h('p', { class: 'hint', text: `Time zone: ${p.settings.timeZone}. Each day keeps the zone it began in.` }),
       h('div', { class: 'row-actions' }, save),
+      this.worldChoices(),
+    );
+  }
+
+  /** The world's per-device choices: they apply at once and stay on this device only. */
+  private worldChoices(): HTMLElement {
+    const prefs = worldPrefs();
+    const lights = h('div', { class: 'choice-row', role: 'radiogroup', 'aria-label': "Ari's light after dark" });
+    for (const [value, label] of LIGHT_STYLES) {
+      const r = h('input', { type: 'radio', name: 'set-light', id: `set-light-${value}`, value });
+      r.checked = prefs.light === value;
+      r.addEventListener('change', () => r.checked && setWorldPrefs({ light: value }));
+      lights.append(h('label', { class: 'check', for: `set-light-${value}` }, r, h('span', { text: label })));
+    }
+    const box = h('input', { id: 'set-shake', type: 'checkbox' });
+    box.checked = prefs.shake;
+    const note = h('p', { class: 'hint', role: 'status', text: 'Shaking the phone swirls the snow or the petals, gusts the trees and swings her lantern. It never changes anything you logged.' });
+    box.addEventListener('change', () => {
+      if (!box.checked) return setWorldPrefs({ shake: false });
+      void askMotion().then((ok) => {
+        box.checked = ok;
+        setWorldPrefs({ shake: ok });
+        if (!ok) note.textContent = 'This browser did not allow the motion sensors here, so shaking stays off.';
+      });
+    });
+    return h(
+      'fieldset',
+      { class: 'field world-choices' },
+      h('legend', { class: 'label', text: 'The world (this device)' }),
+      h('span', { class: 'hint', text: "Ari's light after dark" }),
+      lights,
+      h('label', { class: 'check', for: 'set-shake' }, box, h('span', { text: 'Shake the phone to stir the world' })),
+      note,
+      h('a', { class: 'btn', href: '#today', onclick: () => openLab() }, 'Preview time, season and weather'),
+      h('p', { class: 'hint', text: 'Sliders for the time of day, the season, the weather and the moon, over the camp. A preview: it never changes your record.' }),
     );
   }
 
@@ -271,6 +381,48 @@ export class SetupView {
   }
 
   // Backup ---------------------------------------------------------------------------------
+
+  /** M10, the 14 days of real use: this device's daily record check (data/trial.ts). */
+  private trial(v: View): HTMLElement {
+    const out = h('div', { class: 'trial', role: 'status' });
+    const name = (id: string): string => v.snapshot.habits.habits.find((x) => x.id === id)?.name ?? 'a removed habit';
+    const draw = (st: ReturnType<Controller['trialState']>): void => {
+      if (!st || !st.days.length) {
+        out.replaceChildren(h('p', { class: 'hint', text: 'The first check runs once your record has opened today.' }));
+        return;
+      }
+      const days = st.days.length;
+      const lost = st.days.reduce((n, d) => n + d.lost, 0);
+      const changed = st.days.reduce((n, d) => n + d.changed, 0);
+      const roundBad = st.days.filter((d) => !d.roundTrip).length;
+      const edits = st.days.reduce((n, d) => n + d.edits, 0);
+      const clean = lost === 0 && changed === 0 && roundBad === 0;
+      const lines: Array<HTMLElement> = [
+        h('p', { class: 'trial-day', text: `Checked on ${days} of ${TRIAL_DAYS} days, since ${shortDate(st.start)}.` }),
+        h('p', {
+          class: clean ? 'good' : 'bad',
+          text: clean
+            ? `Nothing lost, nothing changed without an edit, and backups read back identical.${days >= TRIAL_DAYS ? ' The 14 days are clean on this device.' : ''}`
+            : `${lost} lost, ${changed} changed without an edit, ${roundBad} backup round trip${roundBad === 1 ? '' : 's'} not identical.`,
+        }),
+        h('p', { class: 'hint', text: `${edits} edit${edits === 1 ? '' : 's'} of your own along the way (not problems).` }),
+      ];
+      for (const f of st.findings.slice(0, 8)) {
+        lines.push(h('p', { class: 'bad', text: `${f.kind === 'lost' ? 'Lost' : 'Changed'}: ${name(f.habit)} on ${shortDate(f.date)} (was ${f.was.split('@')[0]}${f.now ? `, now ${f.now.split('@')[0]}` : ''}).` }));
+      }
+      out.replaceChildren(...lines);
+    };
+    draw(this.app.trialState() ?? this.app.trialCheck(this.appVersion));
+    const now = h('button', { class: 'btn', type: 'button', text: 'Check now' });
+    now.addEventListener('click', () => draw(this.app.trialCheck(this.appVersion, true)));
+    return section(
+      'setup-trial',
+      'The 14-day check',
+      'Every day this device compares your whole record with yesterday\'s: nothing may vanish or change unless you edited it, and a backup must read back identical. It only reads.',
+      out,
+      h('div', { class: 'row-actions' }, now),
+    );
+  }
 
   private backup(_v: View): HTMLElement {
     const files = (): ReturnType<Controller['exportFiles']> => this.app.exportFiles(this.appVersion);
@@ -394,6 +546,25 @@ function entryText(e: { v?: number; skip?: SkipReason } | null): string {
   if (e.skip !== undefined) return skipLabel(e.skip).toLowerCase();
   return e.v === undefined ? 'nothing' : String(e.v);
 }
+
+type Part = 'habits' | 'you' | 'data' | 'about';
+const PARTS: Array<[Part, string]> = [
+  ['habits', 'Habits'],
+  ['you', 'You & day'],
+  ['data', 'Data'],
+  ['about', 'About'],
+];
+const PART_OF: Record<string, Part> = {
+  'setup-habits': 'habits',
+  'setup-water': 'habits',
+  'setup-expedition': 'you',
+  'setup-settings': 'you',
+  'setup-correct': 'data',
+  'setup-trial': 'data',
+  'setup-backup': 'data',
+  'setup-sync': 'data',
+  'setup-about': 'about',
+};
 
 function section(id: string, title: string, intro: string | null, ...children: Array<HTMLElement | null>): HTMLElement {
   return h('section', { class: 'card', id, 'aria-labelledby': `${id}-h` }, h('h2', { id: `${id}-h`, text: title }), intro ? h('p', { class: 'intro', text: intro }) : null, ...children);
