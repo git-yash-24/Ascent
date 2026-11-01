@@ -39,6 +39,8 @@ import { dressCamp, type CampDress } from './campdress';
 import { Fauna } from './fauna';
 import { Post } from './post';
 import { AriLook } from './ariLook';
+import { Brook, waterU } from './water';
+import { Clutter } from './clutter';
 import { grassU } from './grass';
 
 // The painted look is one shading model for the whole world; installed before anything compiles.
@@ -221,6 +223,8 @@ export class Stage {
   private post: Post | null = null;
   /** Ari's cape and scarf, simulated cloth (ariLook.ts). */
   private readonly look: AriLook;
+  private readonly brook: Brook;
+  private readonly clutter: Clutter;
 
   private readonly postSamples: number;
   private lampLight: THREE.PointLight | null = null;
@@ -352,6 +356,8 @@ export class Stage {
     const seatY = this.camp.group.position.y + 0.17;
     this.look = new AriLook(this.scene, this.climber, { a: v(-0.7, seatY, -1.12), b: v(0.7, seatY, -1.12), r: 0.21 });
     this.fauna = new Fauna(this.scene);
+    this.brook = new Brook(this.scene);
+    this.clutter = new Clutter(this.scene);
     // Organic things take the painted soft shading; stones keep their own weld.
     for (const o of [this.climber.root, this.climber.satchel, this.camp.group, this.kit.group, this.flask, this.journal.group]) soften(o);
     this.seat();
@@ -1604,6 +1610,13 @@ export class Stage {
     if (this.golden > 0.05) this.rim.position.copy(sun.dir).multiplyScalar(12).setY(Math.max(2, sun.dir.y * 12));
     else this.rim.position.set(-5, 8, -11);
     rimU.uRim.value.copy(look.sun).multiplyScalar(this.golden * 0.9);
+    // The brook reflects this sky and catches the key light.
+    waterU.uSky.value.copy(look.horizon).lerp(look.fog, 0.3);
+    waterU.uZenith.value.copy(look.zenith);
+    waterU.uLight.value.copy(dir);
+    waterU.uLightCol.value.copy(key.color).multiplyScalar(Math.min(1.5, key.intensity));
+    waterU.uNight.value = this.night;
+    this.brook.update(this.clock, Math.max(this.golden * 0.6, clamp01((8 - sun.elev) / 10) * clamp01((sun.elev + 6) / 6)) * (1 - c.rain * 0.5));
     rimU.uSunV.value.copy(sun.dir).transformDirection(this.camera.matrixWorldInverse);
     this.horizon.update(this.clock, dt, look, sun.dir, farK);
     // Clouds, wind and the things the wind moves.
@@ -1625,6 +1638,7 @@ export class Stage {
     weatherFx.snow.value = this.lying;
     weatherFx.grow.value = 1 - clamp01(this.lying * 1.2) * 0.85;
     this.meadow.setSeason(c.season);
+    this.clutter.update(this.night, c.season);
     // Flowers open with the morning and fold up at dusk and in the rain.
     const openWant = clamp01((sun.elev + 2) / 8) * (1 - c.rain * 0.8) * (1 - c.snow * 0.5);
     bloom.uOpen.value += (openWant - bloom.uOpen.value) * (1 - Math.exp(-dt / (previewing ? 0.6 : 6)));
@@ -2123,6 +2137,12 @@ export class Stage {
       this.camLook.lerp(want.look, k);
     }
     this.camera.position.copy(this.camPos);
+    // A breathing camera: a slow handheld drift in the near views, never in a cut or a replay.
+    if (!this.reduced && !m && this.view < 2.5 && !this.debugShot) {
+      const k = (1 - clamp01((this.view - 1.4) / 1.1)) * 0.022;
+      const t = this.clock;
+      this.camera.position.add(v(Math.sin(t * 0.31) + Math.sin(t * 0.83) * 0.3, Math.sin(t * 0.23 + 1) * 0.7, Math.sin(t * 0.19 + 2)).multiplyScalar(k));
+    }
     if (this.jolt > 0.01) this.camera.position.add(v(Math.sin(this.clock * 41), Math.sin(this.clock * 37 + 1), Math.sin(this.clock * 29 + 2)).multiplyScalar(this.jolt * 0.05));
     this.camera.lookAt(this.camLook);
     this.shift += ((this.montage || this.intro || this.debugShot ? 0 : this.frameShift) - this.shift) * (1 - Math.exp(-dt * 4));

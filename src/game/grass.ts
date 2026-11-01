@@ -14,7 +14,7 @@
  */
 import * as THREE from 'three';
 import { fbm, mulberry32 } from '../prototype/shared/noise';
-import { groundHeight, pathX, treeWind, weatherFx } from '../prototype/feel3d/world';
+import { STREAM_HALF, groundHeight, pathX, streamDistance, treeWind, weatherFx } from '../prototype/feel3d/world';
 
 export const grassU = {
   /** Ari's feet (x, z) and how far the grass parts round them. */
@@ -75,6 +75,7 @@ function free(x: number, z: number): boolean {
   if (Math.abs(x) < 0.9 && Math.abs(z + 1.12) < 0.38) return false; // Ari's log
   if (Math.abs(x - 0.25) < 0.8 && Math.abs(z - 1.3) < 0.38) return false; // your log
   for (const [cx, cz, r] of KEEP_CLEAR) if (Math.hypot(x - cx, z - cz) < r) return false;
+  if (streamDistance(x, z).d < STREAM_HALF + 0.25) return false;
   return true;
 }
 

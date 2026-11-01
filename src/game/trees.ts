@@ -12,7 +12,7 @@
  */
 import * as THREE from 'three';
 import { fbm, mulberry32 } from '../prototype/shared/noise';
-import { groundHeight, pathX, treeWind, weatherFx } from '../prototype/feel3d/world';
+import { STREAM_HALF, groundHeight, pathX, streamDistance, treeWind, weatherFx } from '../prototype/feel3d/world';
 
 export const treeU = {
   /** The broadleaf canopy's colour this season (multiplied with each tree's own tint). */
@@ -265,6 +265,7 @@ export function buildForest(radius: number): Forest {
     if (z < -6 && Math.abs(x) < 8 + Math.abs(z) * 0.75) continue;
     if (fbm(x * 0.05 + 11, z * 0.05 + 4, 2) < 0.4) continue; // groves, not a carpet
     if (spots.some((o) => Math.hypot(o.x - x, o.z - z) < 2.6)) continue;
+    if (streamDistance(x, z).d < STREAM_HALF + 2.5) continue;
     const leafy = fbm(x * 0.03 + 50, z * 0.03, 2) > 0.52;
     spots.push({ x, z, s: leafy ? 4.2 + rnd() * 2.6 : 5 + rnd() * 4.5, r: rnd() * Math.PI * 2, k: leafy ? 'leaf' : 'fir' });
   }
@@ -313,6 +314,7 @@ export function buildForest(radius: number): Forest {
     const z = Math.sin(a) * d;
     if (Math.abs(x - pathX(z)) < 2.2 || Math.hypot(x, z) < 6.5) continue;
     if (Math.hypot(x + 2.3, z + 2.1) < 3) continue;
+    if (streamDistance(x, z).d < STREAM_HALF + 1.2) continue;
     const s = 0.8 + rnd() * 1.1;
     q.setFromAxisAngle(up, rnd() * Math.PI * 2);
     m4.compose(new THREE.Vector3(x, groundHeight(x, z) - 0.05, z), q, new THREE.Vector3(s * 1.3, s, s * 1.3));
@@ -348,6 +350,7 @@ export function buildFarForest(clear: number): THREE.Group {
     const z = -175 + rnd() * 330;
     if (Math.abs(x - pathX(z)) < 4.5) continue;
     if (Math.hypot(x, z) < clear) continue;
+    if (streamDistance(x, z).d < STREAM_HALF + 2.5) continue;
     if (fbm(x * 0.02 + 40, z * 0.02, 2) < 0.47) continue;
     const s = (0.8 + rnd() * 1.1) * 4.6;
     q.setFromAxisAngle(up, rnd() * Math.PI * 2);

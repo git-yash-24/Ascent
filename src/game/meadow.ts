@@ -6,7 +6,7 @@
  */
 import * as THREE from 'three';
 import { fbm, mulberry32 } from '../prototype/shared/noise';
-import { groundHeight, pathX, patchMaterial } from '../prototype/feel3d/world';
+import { STREAM_HALF, groundHeight, pathX, patchMaterial, streamDistance } from '../prototype/feel3d/world';
 import { buildGrassField } from './grass';
 import type { Season } from './conditions';
 
@@ -73,6 +73,7 @@ function spot(rnd: () => number, inner: number, outer: number): [number, number]
   if (Math.abs(x - pathX(z)) < 0.9) return null;
   if (Math.hypot(x + 2.3, z + 2.1) < 1.4) return null;
   if (Math.hypot(x, z) < 2.3) return null;
+  if (streamDistance(x, z).d < STREAM_HALF + 0.3) return null;
   return [x, z];
 }
 

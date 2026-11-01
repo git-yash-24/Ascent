@@ -287,8 +287,8 @@ export class Fauna {
     this.rabbit.root.visible = false;
     this.deer.root.visible = false;
     // The deer's place: the edge of the trees, across the meadow from the tent.
-    const dx = 4.2;
-    const dz = -15;
+    const dx = 5.5;
+    const dz = -19.5;
     this.deer.root.position.set(dx, groundHeight(dx, dz), dz);
     this.deer.root.rotation.y = -1.25;
     this.group.add(this.flies, this.birds, this.rabbit.root, this.deer.root);

@@ -8,6 +8,53 @@ export function pathX(z: number): number {
 }
 
 /**
+ * The brook: it comes down out of the forest on the right, crosses the route at a ford of
+ * stepping stones a dozen metres beyond camp (between the first two daily camps, where the
+ * camera's view runs out across the meadow), and wanders away left into the trees. A polyline, sampled from a
+ * smooth curve; the ground is carved along it (groundHeight) and the water drawn over it (water.ts).
+ */
+export const STREAM: Array<[number, number]> = (() => {
+  const ctrl: Array<[number, number]> = [[34, -46], [24, -28], [14, -16.5], [5, -12.6], [-3, -12.2], [-10, -10.6], [-17, -6.8], [-25, -0.5], [-33, 8], [-45, 21]];
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const p0 = ctrl[Math.max(0, i - 1)]!;
+    const p1 = ctrl[i]!;
+    const p2 = ctrl[i + 1]!;
+    const p3 = ctrl[Math.min(ctrl.length - 1, i + 2)]!;
+    for (let k = 0; k < 6; k++) {
+      const t = k / 6;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const f = (a: number, b: number, c: number, d: number): number => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  out.push(ctrl[ctrl.length - 1]!);
+  return out;
+})();
+export const STREAM_HALF = 1.15;
+
+/** Distance from (x, z) to the brook's centre line, and how far along it (0..1). */
+export function streamDistance(x: number, z: number): { d: number; u: number } {
+  if (x < -50 || x > 40 || z < -52 || z > 28) return { d: 99, u: 0 };
+  let best = 99;
+  let bu = 0;
+  for (let i = 0; i < STREAM.length - 1; i++) {
+    const a = STREAM[i]!;
+    const b = STREAM[i + 1]!;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+    const d = Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t);
+    if (d < best) {
+      best = d;
+      bu = (i + t) / (STREAM.length - 1);
+    }
+  }
+  return { d: best, u: bu };
+}
+
+/**
  * Ground height at (x, z). The slope rises toward -z; the camp clearing at the origin is flat.
  * Around camp the valley opens into a wide, uneven meadow (Xander, 13 Oct: "mostly flat but with
  * unequal spaces, so we can see the sky while camping"): low hummocks and hollows, the walls
@@ -38,9 +85,12 @@ export function groundHeight(x: number, z: number): number {
   // The valley walls level off into high, rolling shoulders instead of climbing without end:
   // unchanged below 200 m (everything the camp and the trail see), a soft ceiling above it, so
   // the year view looks over them rather than into a kilometre-high wall.
-  if (out <= 200) return out;
+  // The brook's bed: a soft channel with sloping banks.
+  const sd = streamDistance(x, z).d;
+  const carved = sd < STREAM_HALF + 1.5 ? out - 0.62 * THREE.MathUtils.smoothstep(STREAM_HALF + 1.5, STREAM_HALF, sd) : out;
+  if (carved <= 200) return carved;
   const ceiling = 110 + 90 * fbm(x * 0.004 + 5, z * 0.004 + 9, 2);
-  return 200 + ceiling * (1 - Math.exp(-(out - 200) / ceiling));
+  return 200 + ceiling * (1 - Math.exp(-(carved - 200) / ceiling));
 }
 
 // The painted palette (docs/design/art-direction.md): olive and sage meadow with lush blotches,
@@ -57,7 +107,8 @@ const COL = {
 
 function buildTerrain(): THREE.Mesh {
   const size = 360;
-  const seg = 120;
+  // Fine enough to carve the brook's channel and the hummocks round camp.
+  const seg = 260;
   const geo = new THREE.PlaneGeometry(size, size, seg, seg);
   geo.rotateX(-Math.PI / 2);
   geo.translate(0, 0, -20);
@@ -88,6 +139,12 @@ function buildTerrain(): THREE.Mesh {
     if (dp < 1.3 && cz < 160) c.lerp(COL.dirt, THREE.MathUtils.smoothstep(1.3 - dp, 0, 0.9));
     const camp = Math.hypot(cx, cz);
     if (camp < 3.4) c.lerp(COL.dirt, 0.65 * THREE.MathUtils.smoothstep(3.4 - camp, 0, 1.6));
+    // The brook's bed and damp banks: dark wet earth and pebbles, lush moss on the banks.
+    const sdist = streamDistance(cx, cz).d;
+    if (sdist < STREAM_HALF + 2.2) {
+      c.lerp(COL.lush, THREE.MathUtils.smoothstep(STREAM_HALF + 2.2, STREAM_HALF + 0.6, sdist) * 0.6);
+      c.lerp(new THREE.Color('#5a4c3c'), THREE.MathUtils.smoothstep(STREAM_HALF + 0.9, STREAM_HALF + 0.2, sdist) * 0.8);
+    }
     colors.set([c.r, c.g, c.b], i * 3);
     snowK[i] = dp < 1.1 && cz < 160 ? 0.25 : camp < 2.2 ? 0 : 0.75 + 0.25 * fbm(cx * 0.2, cz * 0.2, 2);
   }
@@ -161,6 +218,7 @@ function buildRocks(): THREE.InstancedMesh {
     const z = -120 + rnd() * 240;
     if (Math.abs(x - pathX(z)) < 1.6) continue;
     if (Math.hypot(x, z) < 3.6) continue;
+    if (streamDistance(x, z).d < STREAM_HALF + 0.8) continue;
     const sc = 0.25 + rnd() * rnd() * 2.2;
     e.set((rnd() - 0.5) * 0.4, rnd() * 6.3, (rnd() - 0.5) * 0.4);
     q.setFromEuler(e);
