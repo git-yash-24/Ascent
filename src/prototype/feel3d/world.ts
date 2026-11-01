@@ -557,14 +557,14 @@ export interface World {
   update(t: number): void;
 }
 
-export function buildWorld(scene: THREE.Scene, opts: { nearForest?: number } = {}): World {
+export function buildWorld(scene: THREE.Scene, opts: { nearForest?: number; noTrees?: boolean } = {}): World {
   const group = new THREE.Group();
   const skyGroup = buildSky();
   group.add(skyGroup);
   const skyMat = (skyGroup.children[0] as THREE.Mesh).material as THREE.ShaderMaterial;
   const stars = skyGroup.children[1] as THREE.Points;
   group.add(buildTerrain());
-  group.add(buildTrees(opts.nearForest ?? 11));
+  if (!opts.noTrees) group.add(buildTrees(opts.nearForest ?? 11));
   group.add(buildRocks());
   const { group: mountains, summit } = buildMountains();
   group.add(mountains);

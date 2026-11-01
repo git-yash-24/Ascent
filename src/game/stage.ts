@@ -22,7 +22,7 @@ import { Meadow, bloom } from './meadow';
 import { Carry, Shelter, rimU, sunKiss } from './ari';
 import { onWorldPrefs, worldPrefs } from '../ui/worldPrefs';
 import { Clouds } from './clouds';
-import { buildNearForest, type Scenery } from './scenery';
+import { buildForest, buildFarForest, treeU, type Forest } from './trees';
 import { Horizon } from './horizon';
 import { buildCamp } from '../prototype/feel3d/camp';
 import { buildClimber, POSES, lerpPose, walkPose, type Climber, type Joint, type Pose } from '../prototype/feel3d/climber';
@@ -37,6 +37,9 @@ import { appDate, warpState } from '../core/time/appClock';
 import { installStyle, soften } from './style';
 import { dressCamp, type CampDress } from './campdress';
 import { Fauna } from './fauna';
+import { Post } from './post';
+import { AriLook } from './ariLook';
+import { grassU } from './grass';
 
 // The painted look is one shading model for the whole world; installed before anything compiles.
 installStyle();
@@ -60,6 +63,11 @@ const C = (h: string): THREE.Color => new THREE.Color(h);
 const SKYGLOW = v(0.25, 1, 0.35).normalize();
 /** The ground's tint by season, and the bushes': fresh, sunburnt, rust, bare. */
 const SEASON_TINT: Record<Season, THREE.Color> = { spring: C('#f2ffe0'), summer: C('#fff0c8'), autumn: C('#ffd2a8'), winter: C('#e6e2dc') };
+/** The grass by season: fresh spring green, sun-gold late summer, rust autumn, straw winter. */
+const GRASS: Record<Season, THREE.Color> = { spring: C('#e8ffd8'), summer: C('#fff2c8'), autumn: C('#ffc890'), winter: C('#e8d8c0') };
+/** The broadleaf canopy by season, and how bare it is. */
+const LEAF: Record<Season, THREE.Color> = { spring: C('#86b84e'), summer: C('#5f8e3c'), autumn: C('#d8822e'), winter: C('#8a7050') };
+const BARE: Record<Season, number> = { spring: 0, summer: 0, autumn: 0.15, winter: 0.92 };
 const BUSH: Record<Season, THREE.Color> = { spring: C('#d6ffb8'), summer: C('#f0f0c0'), autumn: C('#ff9a50'), winter: C('#b8a088') };
 
 function collectLambert(o: THREE.Object3D): THREE.MeshLambertMaterial[] {
@@ -209,11 +217,17 @@ export class Stage {
   private gaze = { yaw: 0, pitch: 0, wantYaw: 0, wantPitch: 0, next: 2, blinkAt: 3 };
   private exposure = 1.12;
   private lampGlow: THREE.Sprite | null = null;
+  /** The camera's eye: HDR, bloom, shafts, focus, grade (null on the light tier). */
+  private post: Post | null = null;
+  /** Ari's cape and scarf, simulated cloth (ariLook.ts). */
+  private readonly look: AriLook;
+
+  private readonly postSamples: number;
   private lampLight: THREE.PointLight | null = null;
   /** Phase 3: one wind, one cloud layer, the sun's state for this frame. */
   readonly wind = new Wind();
   private readonly clouds: Clouds;
-  private readonly forest: Scenery;
+  private readonly forest: Forest;
   private readonly horizon: Horizon;
   sunElev = 0;
   /**
@@ -279,6 +293,7 @@ export class Stage {
     this.renderer = renderer;
     this.reduced = reducedMotion;
     const coarse = window.matchMedia('(pointer: coarse)').matches;
+    this.postSamples = renderer.capabilities.isWebGL2 ? (coarse ? 2 : 4) : 0;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.5 : 1.75));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -312,9 +327,9 @@ export class Stage {
 
     this.sound = createSound();
     // The forest within 60 m of camp is modelled (CC0 pines and bushes); cones beyond.
-    this.world = buildWorld(this.scene, { nearForest: 60 });
-    this.forest = buildNearForest(60);
-    this.scene.add(this.forest.group);
+    this.world = buildWorld(this.scene, { nearForest: 60, noTrees: true });
+    this.forest = buildForest(60);
+    this.scene.add(this.forest.group, buildFarForest(60));
     this.horizon = new Horizon(this.scene, YEAR_SHOT.pos, YEAR_SHOT.look);
     this.camp = buildCamp(this.scene, coarse ? 512 : 1024);
     this.climber = buildClimber();
@@ -334,6 +349,8 @@ export class Stage {
     this.holster();
     this.kit = buildKit(this.scene);
     this.dress = dressCamp(this.scene, this.camp.group.children[1]);
+    const seatY = this.camp.group.position.y + 0.17;
+    this.look = new AriLook(this.scene, this.climber, { a: v(-0.7, seatY, -1.12), b: v(0.7, seatY, -1.12), r: 0.21 });
     this.fauna = new Fauna(this.scene);
     // Organic things take the painted soft shading; stones keep their own weld.
     for (const o of [this.climber.root, this.climber.satchel, this.camp.group, this.kit.group, this.flask, this.journal.group]) soften(o);
@@ -951,6 +968,14 @@ export class Stage {
     const w = this.canvas.clientWidth || 1;
     const h = this.canvas.clientHeight || 1;
     this.renderer.setSize(w, h, false);
+    if (this.tier > 0 && !new URLSearchParams(location.search).has('nopost')) {
+      this.post ??= new Post(this.renderer, this.postSamples);
+      const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+      this.post.setSize(size.x, size.y);
+    } else if (this.post) {
+      this.post.dispose();
+      this.post = null;
+    }
     this.camera.aspect = w / h;
     this.camera.fov = w / h < 0.8 ? 60 : 46;
     this.camera.updateProjectionMatrix();
@@ -1604,7 +1629,12 @@ export class Stage {
     const openWant = clamp01((sun.elev + 2) / 8) * (1 - c.rain * 0.8) * (1 - c.snow * 0.5);
     bloom.uOpen.value += (openWant - bloom.uOpen.value) * (1 - Math.exp(-dt / (previewing ? 0.6 : 6)));
     weatherFx.tint.value.lerp(SEASON_TINT[c.season], ease1);
+    grassU.uSeason.value.lerp(GRASS[c.season], ease1);
+    const feet = this.climber.root.position;
+    grassU.uPush.value.set(feet.x, feet.z, this.phase === 'sit' ? 0.5 : 0.35);
     this.forest.bushes.color.lerp(BUSH[c.season], ease1);
+    treeU.uLeaf.value.lerp(LEAF[c.season], ease1);
+    treeU.uBare.value += (BARE[c.season] - treeU.uBare.value) * ease1;
     this.puddles.update(this.wet * (1 - this.lying), look.horizon.clone().lerp(look.zenith, 0.4));
     const falling = c.rain * (c.kind === 'showers' ? showerPulse(this.clock) : 1);
     this.sound.setRain(this.view < 2.5 ? falling : falling * 0.3);
@@ -1855,6 +1885,47 @@ export class Stage {
     c.look(this.reduced ? 0 : g.yaw, this.reduced ? 0 : g.pitch, open);
   }
 
+  /**
+   * The final picture through the camera's eye. Bloom is stronger at night (fire, lamps,
+   * fireflies); light shafts come with a low sun through broken cloud; focus sits on Ari in the
+   * near views; the grade warms the light and cools the shade, a little cooler again by night.
+   */
+  private renderPost(glow: number): void {
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    const sunW = cam.position.clone().addScaledVector(this.world.skySun.dir, 1500);
+    const ndc = sunW.clone().project(cam);
+    const ahead = this.world.skySun.dir.dot(cam.getWorldDirection(new THREE.Vector3())) > 0;
+    const sun = new THREE.Vector2(ndc.x * 0.5 + 0.5, ndc.y * 0.5 + 0.5);
+    const day = clamp01((this.sunElev + 2) / 10);
+    const cover = this.clouds.cover;
+    const shaft = ahead ? (this.golden * 0.75 + day * 0.18) * Math.pow(1 - cover, 1.2) * (1 - this.cond.fog * 0.6) * (1 - this.cond.rain) : 0;
+    const head = new THREE.Vector3();
+    this.climber.joints.head.getWorldPosition(head);
+    const focus = cam.position.distanceTo(head);
+    const near = 1 - clamp01((this.view - 1.2) / 0.8);
+    const night = this.night;
+    this.post!.render(this.scene, cam, {
+      // three's ACES filmic divides exposure by 0.6; keep the same brightness.
+      // Eye adaptation: by night the eye opens up, so moonlit shapes still read.
+      exposure: ((this.exposure + glow * 0.16) / 0.6) * (1 + night * 0.85),
+      bloom: 0.42 + night * 0.5,
+      sun,
+      shaft: shaft * 0.55,
+      shaftColor: this.world.skySun.color,
+      focus,
+      focusRange: Math.max(1.5, focus * 0.9),
+      dof: this.montage || this.intro ? 0.25 : near * 0.8,
+      vignette: 0.32 + night * 0.12,
+      grain: 0.028,
+      saturation: 1.12 - night * 0.08,
+      contrast: 0.22,
+      warm: new THREE.Color(1.07, 1.0, 0.9).lerp(new THREE.Color(1.12, 0.98, 0.84), this.golden),
+      cool: new THREE.Color(0.93, 0.98, 1.07).lerp(new THREE.Color(0.86, 0.95, 1.16), night),
+      time: this.clock,
+    });
+  }
+
   /** The camp lantern (once built): lit from dusk to dawn, with a little real light of its own. */
   private lightLantern(): void {
     const lamp = this.kit.group.getObjectByName('lamp') as THREE.Mesh | undefined;
@@ -1903,6 +1974,17 @@ export class Stage {
     c.overlay(this.clock, cold, !this.reduced, this.breathPhase, this.fatigue);
     if (!this.reduced) c.flutter(this.clock, this.wind.strength, this.phase === 'walk' ? 1 : 0);
     this.lookAround(dt);
+    this.look.update(
+      dt,
+      {
+        wind: new THREE.Vector2(this.wind.dir.x, this.wind.dir.y).multiplyScalar(this.wind.strength * 3.2 * (this.reduced ? 0.3 : 1)),
+        gust: this.wind.gust,
+        time: this.clock,
+        ground: groundHeight,
+      },
+      this.phase === 'sit',
+      !this.reduced || true,
+    );
     this.tendWeather(dt);
     this.dress.update(this.clock, dt, this.night, this.camp.fire.wind, this.camp.fire.level);
     this.fauna.update({
@@ -2047,7 +2129,8 @@ export class Stage {
     const w = this.canvas.clientWidth || 1;
     const h = this.canvas.clientHeight || 1;
     this.camera.setViewOffset(w, h, 0, h * this.shift, w, h);
-    this.renderer.render(this.scene, this.camera);
+    if (this.post) this.renderPost(glow);
+    else this.renderer.render(this.scene, this.camera);
     this.onFrame?.();
   }
 }

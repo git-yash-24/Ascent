@@ -32,6 +32,10 @@ export interface Climber {
    * it, the eyes leading), and how open her eyes are (0 shut to 1).
    */
   look(yaw: number, pitch: number, open: number): void;
+  /** Her main cloth colours (the cape and the scarf follow them). */
+  palette: { hood: THREE.MeshLambertMaterial; coat: THREE.MeshLambertMaterial; scarf: THREE.MeshLambertMaterial };
+  /** Parts a richer look may replace (the stiff scarf tails, the hood's old peak). */
+  replaceable: THREE.Object3D[];
 }
 
 /** Clothing colours per layer: coat, sleeves, hood. */
@@ -69,14 +73,14 @@ export function buildClimber(): Climber {
     return g;
   };
   const cyl = (rt: number, rb: number, h: number, m: THREE.Material, seg = 7): THREE.Mesh => {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, Math.max(seg, 14)), m);
     return mesh;
   };
   /** A turned shape from [radius, y] pairs, top to bottom: torsos, sleeves, trouser legs. */
   const lathe = (pts: Array<[number, number]>, m: THREE.Material, seg = 9): THREE.Mesh =>
-    new THREE.Mesh(new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg), m);
+    new THREE.Mesh(new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), Math.max(seg, 18)), m);
   const ball = (r: number, m: THREE.Material, sx = 1, sy = 1, sz = 1, w = 8, h = 6): THREE.Mesh => {
-    const b = new THREE.Mesh(new THREE.SphereGeometry(r, w, h), m);
+    const b = new THREE.Mesh(new THREE.SphereGeometry(r, Math.max(w, 14), Math.max(h, 10)), m);
     b.scale.set(sx, sy, sz);
     return b;
   };
@@ -132,9 +136,45 @@ export function buildClimber(): Climber {
 
   const head = grp(0, 0.1, 0.01);
   neck.add(head);
-  const hoodBall = ball(0.165, hood, 1, 1.1, 1.15, 12, 9);
-  hoodBall.position.y = 0.11;
+  const hoodBall = ball(0.178, hood, 1, 1.1, 1.18, 20, 16);
+  hoodBall.position.y = 0.115;
   head.add(hoodBall);
+  // The hood's long point droops back over her shoulders, like a pilgrim's cowl.
+  {
+    const pts = [new THREE.Vector3(0, 0.2, -0.08), new THREE.Vector3(0, 0.25, -0.2), new THREE.Vector3(0, 0.17, -0.33), new THREE.Vector3(0, 0.0, -0.39), new THREE.Vector3(0, -0.14, -0.36)];
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const RINGS = 14;
+    const SEG = 12;
+    const pos: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= RINGS; i++) {
+      const t = i / RINGS;
+      const c = curve.getPoint(t);
+      const tan = curve.getTangent(t);
+      const side = new THREE.Vector3(1, 0, 0);
+      const up = new THREE.Vector3().crossVectors(tan, side).normalize();
+      const r = 0.1 * Math.pow(1 - t, 0.9) + 0.006;
+      for (let k = 0; k < SEG; k++) {
+        const a = (k / SEG) * Math.PI * 2;
+        const o = side.clone().multiplyScalar(Math.cos(a) * r * 1.15).addScaledVector(up, Math.sin(a) * r * 0.8);
+        pos.push(c.x + o.x, c.y + o.y, c.z + o.z);
+      }
+    }
+    for (let i = 0; i < RINGS; i++) {
+      for (let k = 0; k < SEG; k++) {
+        const a = i * SEG + k;
+        const b = i * SEG + ((k + 1) % SEG);
+        idx.push(a, a + SEG, b, b, a + SEG, b + SEG);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const tail = new THREE.Mesh(g, hood);
+    tail.name = 'hoodTail';
+    head.add(tail);
+  }
   // The hood's point falls back behind the head, like a climber's cowl.
   const hoodPeak = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.2, 6), hood);
   hoodPeak.position.set(0, 0.17, -0.18);
@@ -148,16 +188,17 @@ export function buildClimber(): Climber {
   const opening = ball(0.115, face, 0.95, 1.15, 0.75, 10, 8);
   opening.position.set(0, 0.09, 0.14);
   head.add(opening);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.112, 0.022, 5, 14), hood);
-  rim.position.set(0, 0.095, 0.19);
-  rim.scale.set(0.95, 1.18, 1);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.114, 0.03, 10, 28), hood);
+  rim.position.set(0, 0.095, 0.188);
+  rim.scale.set(0.95, 1.16, 0.85);
   head.add(rim);
   const mouth = new THREE.Object3D();
   mouth.position.set(0, 0.06, 0.22);
   head.add(mouth);
   // Her eyes: two warm points in the shadow of the hood. They blink, droop when she is tired
   // and lead the head when something catches her attention.
-  const eyeMat = new THREE.MeshBasicMaterial({ color: '#f6ecd4' });
+  // HDR white: through the camera's bloom they glow softly, like embers in the hood.
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.15, 1.7) });
   const eyes = grp(0, 0.1, 0.221);
   for (const sx of [-1, 1]) {
     const eye = ball(0.017, eyeMat, 0.78, 1.2, 0.35, 10, 8);
@@ -294,6 +335,8 @@ export function buildClimber(): Climber {
   });
   const climber: Climber = {
     root, hips, joints, satchel, mouth, materials,
+    palette: { hood, coat, scarf },
+    replaceable: [scarfTail, hoodPeak],
     dress(o) {
       const [c, sl, hd] = LAYERS[o.layer];
       coat.color.set(c);

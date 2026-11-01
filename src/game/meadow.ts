@@ -7,66 +7,14 @@
 import * as THREE from 'three';
 import { fbm, mulberry32 } from '../prototype/shared/noise';
 import { groundHeight, pathX, patchMaterial } from '../prototype/feel3d/world';
+import { buildGrassField } from './grass';
 import type { Season } from './conditions';
 
-const TUFTS = 5200;
+const GRASS_BLADES = 70000;
 const FLOWERS = 640;
 
 /** The meadow's flowers open by day and fold up at night and in rain (shared by every flower). */
 export const bloom = { uOpen: { value: 1 } };
-
-/**
- * A painted tuft: eight blades, each curving outward in two segments, dark and cool at the root,
- * warm and light at the tip. Normals point up, so a tuft shades like a soft mound, not like cards.
- */
-function tuftGeometry(): THREE.BufferGeometry {
-  const rnd = mulberry32(61);
-  const pos: number[] = [];
-  const col: number[] = [];
-  const nor: number[] = [];
-  const base = new THREE.Color('#465c2c');
-  const mid = new THREE.Color('#7a9644');
-  const tip = new THREE.Color('#cfcc7c');
-  const push = (p: number[], c: THREE.Color): void => {
-    pos.push(p[0]!, p[1]!, p[2]!);
-    col.push(c.r, c.g, c.b);
-    nor.push(p[0]! * 2, 1, p[2]! * 2);
-  };
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2 + rnd() * 0.5;
-    const h = 0.11 + rnd() * 0.15;
-    const lean = 0.07 + rnd() * 0.1;
-    const w = 0.03 + rnd() * 0.016;
-    const ca = Math.cos(a);
-    const sa = Math.sin(a);
-    const cx = ca * 0.04 * rnd();
-    const cz = sa * 0.04 * rnd();
-    const px = -sa * w;
-    const pz = ca * w;
-    // Root, a bend halfway up, the tip curling out.
-    const m = [cx + ca * lean * 0.35, h * 0.55, cz + sa * lean * 0.35];
-    const t = [cx + ca * lean, h, cz + sa * lean];
-    push([cx - px, 0, cz - pz], base);
-    push([cx + px, 0, cz + pz], base);
-    push([m[0]! + px * 0.6, m[1]!, m[2]! + pz * 0.6], mid);
-    push([cx - px, 0, cz - pz], base);
-    push([m[0]! + px * 0.6, m[1]!, m[2]! + pz * 0.6], mid);
-    push([m[0]! - px * 0.6, m[1]!, m[2]! - pz * 0.6], mid);
-    push([m[0]! - px * 0.6, m[1]!, m[2]! - pz * 0.6], mid);
-    push([m[0]! + px * 0.6, m[1]!, m[2]! + pz * 0.6], mid);
-    push(t, tip);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  const n = new THREE.Float32BufferAttribute(nor, 3);
-  for (let i = 0; i < n.count; i++) {
-    const v = new THREE.Vector3(n.getX(i), n.getY(i), n.getZ(i)).normalize();
-    n.setXYZ(i, v.x, v.y, v.z);
-  }
-  g.setAttribute('normal', n);
-  return g;
-}
 
 /**
  * A wild flower: a stem, five petals round a centre. `aPetal` marks how far out along a petal a
@@ -135,28 +83,15 @@ export class Meadow {
 
   constructor(scene: THREE.Scene) {
     const rnd = mulberry32(67);
-    const grassMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    patchMaterial(grassMat, { sway: [0, 2.6], snow: 0.6, tint: true, grow: true });
-    this.grass = new THREE.InstancedMesh(tuftGeometry(), grassMat, TUFTS);
+    // The grass: a field of individual blades (grass.ts).
+    const field = buildGrassField(GRASS_BLADES);
+    this.grass = field.mesh;
+    this.grass.userData.max = field.max;
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0);
     let n = 0;
     let guard = 0;
-    while (n < TUFTS && guard++ < 40000) {
-      const p = spot(rnd, 2.3, 32);
-      if (!p) continue;
-      // In clumps, thicker toward the meadow's hollows, thinner by the trodden camp.
-      if (fbm(p[0] * 0.25 + 9, p[1] * 0.25, 2) < 0.33 + (Math.hypot(p[0], p[1]) < 5 ? 0.12 : 0)) continue;
-      const far = Math.hypot(p[0], p[1]);
-      const sc = (0.9 + rnd() * 0.9) * (far > 8 ? 1.4 : 1);
-      q.setFromAxisAngle(up, rnd() * Math.PI * 2);
-      m.compose(new THREE.Vector3(p[0], groundHeight(p[0], p[1]) - 0.02, p[1]), q, new THREE.Vector3(sc * 1.2, sc * (0.8 + rnd() * 0.5), sc * 1.2));
-      this.grass.setMatrixAt(n++, m);
-    }
-    this.grass.count = n;
-    this.grass.userData.max = n;
-    this.grass.receiveShadow = true;
 
     const flowerMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
     patchMaterial(flowerMat, { sway: [0, 3], grow: true });
@@ -203,6 +138,6 @@ export class Meadow {
 
   /** Fewer tufts on a slower device (quality tier 0, 1, 2). */
   setTier(t: number): void {
-    this.grass.count = Math.floor((this.grass.userData.max as number) * [0.35, 0.7, 1][t]!);
+    this.grass.count = Math.floor((this.grass.userData.max as number) * [0.3, 0.6, 1][t]!);
   }
 }

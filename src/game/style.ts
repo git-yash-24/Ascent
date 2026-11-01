@@ -44,10 +44,64 @@ void RE_IndirectDiffuse_Lambert( const in vec3 irradiance, const in vec3 geometr
 
 let installed = false;
 
+/**
+ * Atmosphere for every fogged material: distance fog that glows toward the key light (the sun's
+ * in-scattering: haze is brighter and warmer looking into the light), plus a soft valley haze
+ * that lies low and thins with height.
+ */
+const FOG_PARS_VERTEX = `#ifdef USE_FOG
+	varying float vFogDepth;
+	varying vec3 vFogView;
+	varying float vFogY;
+#endif`;
+const FOG_VERTEX = `#ifdef USE_FOG
+	vFogDepth = - mvPosition.z;
+	vFogView = mvPosition.xyz;
+	vFogY = ( vec4( mvPosition.xyz, 0.0 ) * viewMatrix ).y + cameraPosition.y;
+#endif`;
+const FOG_PARS_FRAGMENT = `#ifdef USE_FOG
+	uniform vec3 fogColor;
+	varying float vFogDepth;
+	varying vec3 vFogView;
+	varying float vFogY;
+	#ifdef FOG_EXP2
+		uniform float fogDensity;
+	#else
+		uniform float fogNear;
+		uniform float fogFar;
+	#endif
+#endif`;
+const FOG_FRAGMENT = `#ifdef USE_FOG
+	#ifdef FOG_EXP2
+		float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );
+	#else
+		float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+	#endif
+	// Valley haze: dense low down, gone by about 60 m up; it needs some distance to show.
+	float haze = exp( - max( vFogY + 4.0, 0.0 ) * 0.045 ) * ( 1.0 - exp( - vFogDepth * 0.006 ) ) * 0.55 * ( 1.0 - smoothstep( 40.0, 260.0, cameraPosition.y ) );
+	fogFactor = clamp( fogFactor + haze * ( 1.0 - fogFactor ), 0.0, 1.0 );
+	vec3 fogC = fogColor;
+	#if defined( STYLE_LIT ) && NUM_DIR_LIGHTS > 0
+		vec3 sd = directionalLights[ 0 ].direction;
+		vec3 sc = directionalLights[ 0 ].color;
+		float toward = pow( max( dot( normalize( vFogView ), sd ), 0.0 ), 5.0 );
+		vec3 glowC = sc / max( max( sc.r, max( sc.g, sc.b ) ), 0.001 );
+		fogC = mix( fogC, fogC * 0.4 + glowC * max( dot( fogC, vec3( 0.33 ) ), 0.25 ) * 1.4, toward * 0.85 );
+	#endif
+	gl_FragColor.rgb = mix( gl_FragColor.rgb, fogC, fogFactor );
+#endif`;
+
 export function installStyle(): void {
   if (installed) return;
   installed = true;
-  (THREE.ShaderChunk as Record<string, string>).lights_lambert_pars_fragment = PAINTED;
+  const chunks = THREE.ShaderChunk as Record<string, string>;
+  chunks.lights_lambert_pars_fragment = PAINTED;
+  chunks.fog_pars_vertex = FOG_PARS_VERTEX;
+  chunks.fog_vertex = FOG_VERTEX;
+  chunks.fog_pars_fragment = FOG_PARS_FRAGMENT;
+  chunks.fog_fragment = FOG_FRAGMENT;
+  // Marks programs where the light uniforms are declared, so the fog can read the key light.
+  if (!chunks.lights_pars_begin!.startsWith('#define STYLE_LIT')) chunks.lights_pars_begin = `#define STYLE_LIT\n${chunks.lights_pars_begin}`;
 }
 
 /**

@@ -62,16 +62,16 @@ varying float vShow;
 varying float vBelly;
 void main() {
   // The whole cloud shades as one form: each puff's normal leans toward the cloud's.
-  vec3 n = normalize(mix(vN, normalize(vW - vC - vec3(0.0, 20.0, 0.0)), 0.35));
+  vec3 n = normalize(mix(vN, normalize(vW - vC - vec3(0.0, 20.0, 0.0)), 0.62));
   float w = dot(n, uLight) * 0.5 + 0.5;
   float lit = smoothstep(0.38, 0.62, w) * 0.72 + smoothstep(0.78, 0.96, w) * 0.28;
   vec3 col = mix(uShade, uLit, lit);
   // The belly is darker and cooler; storm cover darkens it more.
   col *= mix(0.72 - uCover * 0.18, 1.0, smoothstep(0.0, 0.55, vBelly));
   vec3 v = normalize(cameraPosition - vW);
-  float fres = pow(1.0 - max(dot(n, v), 0.0), 2.2);
+  float fres = pow(1.0 - max(dot(n, v), 0.0), 3.0);
   float toward = pow(max(dot(-v, uLight), 0.0), 4.0);
-  col += uLit * fres * (0.18 + 0.7 * toward);
+  col += uLit * fres * (0.06 + 0.5 * toward);
   // Aerial perspective: far and low clouds sink into the horizon haze.
   vec3 d = normalize(vW - cameraPosition);
   float haze = (1.0 - smoothstep(0.02, 0.32, d.y)) * 0.55;

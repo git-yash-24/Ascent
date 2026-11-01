@@ -30,8 +30,10 @@ function farRing(eye: THREE.Vector3, look: THREE.Vector3): THREE.Mesh {
   const rnd = rng(5);
   const pos: number[] = [];
   const col: number[] = [];
-  const rock = new THREE.Color('#4a5161');
-  const rock2 = new THREE.Color('#3d4352');
+  const index: number[] = [];
+  const peaks: Array<{ base: number; count: number; snowLine: number; h: number }> = [];
+  const rock = new THREE.Color('#56607a');
+  const rock2 = new THREE.Color('#444c66');
   const snow = new THREE.Color('#dfe6ef');
   const N = 54;
   for (let i = 0; i < N; i++) {
@@ -43,37 +45,58 @@ function farRing(eye: THREE.Vector3, look: THREE.Vector3): THREE.Mesh {
     const cz = CENTRE.z - Math.cos(a) * r;
     const rel = new THREE.Vector2(cx - eye.x, cz - eye.z);
     if (rel.length() < 1300 || rel.dot(fwd) < rel.length() * 0.15) continue;
-    // A peak: a 6-sided cone with a jittered apex, base well below the cloud deck.
-    const sides = 6;
+    // A massif: a cone of rings, each vertex pushed by ridged noise so ridges, shoulders and
+    // gullies form; a secondary summit off to one side. Snow holds on the gentler faces.
+    const RAD = 18;
+    const RINGS = 9;
     const apex = new THREE.Vector3(cx + (rnd() - 0.5) * 60, h, cz + (rnd() - 0.5) * 60);
+    const seed = rnd() * 100;
+    const snowLine = h * (0.5 + rnd() * 0.12);
+    const shoulder = rnd() * Math.PI * 2;
+    const base = pos.length / 3;
     const ring: THREE.Vector3[] = [];
-    for (let k = 0; k < sides; k++) {
-      const b = (k / sides) * Math.PI * 2 + rnd() * 0.4;
-      const rr = w * (0.7 + rnd() * 0.5);
-      ring.push(new THREE.Vector3(cx + Math.cos(b) * rr, -60, cz + Math.sin(b) * rr));
+    for (let j = 0; j <= RINGS; j++) {
+      const t = j / RINGS; // 0 base, 1 apex
+      for (let k = 0; k < RAD; k++) {
+        const b = (k / RAD) * Math.PI * 2;
+        const ridge = Math.abs(Math.sin(b * 3 + seed) * 0.6 + Math.sin(b * 7 + seed * 2) * 0.4);
+        const sh = Math.max(0, Math.cos(b - shoulder)) * 0.35 * Math.sin(t * Math.PI);
+        const rr = w * (1 - t) * (0.75 + ridge * 0.45 + sh) * (1 - t * t * 0.2);
+        const y = -60 + (h + 60) * Math.pow(t, 0.85) * (1 - sh * 0.15) + (ridge - 0.5) * 18 * (1 - t);
+        const p = new THREE.Vector3(apex.x * t + cx * (1 - t) + Math.cos(b) * rr, y, apex.z * t + cz * (1 - t) + Math.sin(b) * rr);
+        ring.push(p);
+      }
     }
-    // A shoulder halfway up makes each peak read as a mountain, not a cone.
-    const mid = ring.map((p) => p.clone().lerp(apex, 0.45 + rnd() * 0.15).add(new THREE.Vector3((rnd() - 0.5) * 40, 0, (rnd() - 0.5) * 40)));
-    const snowLine = h * (0.55 + rnd() * 0.12);
-    const tri = (p: THREE.Vector3, q: THREE.Vector3, s: THREE.Vector3, shade: THREE.Color): void => {
-      for (const v of [p, q, s]) pos.push(v.x, v.y, v.z);
-      const y = (p.y + q.y + s.y) / 3;
-      const c = shade.clone();
-      if (y > snowLine) c.lerp(snow, Math.min(0.92, (y - snowLine) / (h * 0.18)));
-      for (let k = 0; k < 3; k++) col.push(c.r, c.g, c.b);
-    };
-    for (let k = 0; k < sides; k++) {
-      const n = (k + 1) % sides;
-      const shade = k % 2 ? rock : rock2;
-      tri(ring[k]!, ring[n]!, mid[n]!, shade);
-      tri(ring[k]!, mid[n]!, mid[k]!, shade);
-      tri(mid[k]!, mid[n]!, apex, shade);
+    for (const p of ring) pos.push(p.x, p.y, p.z);
+    pos.push(apex.x, apex.y + 6, apex.z);
+    for (let j = 0; j < RINGS; j++) {
+      for (let k = 0; k < RAD; k++) {
+        const a0 = base + j * RAD + k;
+        const a1 = base + j * RAD + ((k + 1) % RAD);
+        const b0 = a0 + RAD;
+        const b1 = a1 + RAD;
+        index.push(a0, b0, a1, a1, b0, b1);
+      }
     }
+    const top = base + (RINGS + 1) * RAD;
+    for (let k = 0; k < RAD; k++) index.push(base + RINGS * RAD + k, top, base + RINGS * RAD + ((k + 1) % RAD));
+    peaks.push({ base, count: (RINGS + 1) * RAD + 1, snowLine, h });
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(index);
   g.computeVertexNormals();
+  const gn = g.attributes.normal as THREE.BufferAttribute;
+  for (const pk of peaks) {
+    for (let i = pk.base; i < pk.base + pk.count; i++) {
+      const y = pos[i * 3 + 1]!;
+      const c = rock.clone().lerp(rock2, 0.5 + 0.5 * Math.sin(pos[i * 3]! * 0.03 + pos[i * 3 + 2]! * 0.02));
+      const gentle = THREE.MathUtils.smoothstep(gn.getY(i), 0.35, 0.75);
+      if (y > pk.snowLine) c.lerp(snow, Math.min(0.95, ((y - pk.snowLine) / (pk.h * 0.16)) * (0.3 + gentle * 0.7)));
+      col.push(c.r, c.g, c.b);
+    }
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
   m.frustumCulled = false;
   return m;
