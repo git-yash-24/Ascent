@@ -111,9 +111,10 @@ export function buildFire(shadowSize: number): Fire {
     group.add(pivot);
   }
   // Embers bed
+  // The ember bed glows hot (HDR, so the bloom picks it up).
   const bed = new THREE.Mesh(
-    new THREE.CircleGeometry(0.3, 10),
-    new THREE.MeshBasicMaterial({ color: '#ff6a2a', transparent: true, opacity: 0.85 }),
+    new THREE.CircleGeometry(0.3, 16),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, 0.9, 0.25), transparent: true, opacity: 0.85 }),
   );
   bed.rotation.x = -Math.PI / 2;
   bed.position.y = 0.03;
@@ -154,7 +155,7 @@ export function buildFire(shadowSize: number): Fire {
   for (let i = 0; i < EMBERS; i++) eLife[i] = rnd() * 2;
   const eGeo = new THREE.BufferGeometry();
   eGeo.setAttribute('position', new THREE.BufferAttribute(ePos, 3));
-  const eMat = new THREE.PointsMaterial({ color: '#ffb066', size: 0.045, map: dotTexture(), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+  const eMat = new THREE.PointsMaterial({ color: new THREE.Color(3.2, 1.5, 0.5), size: 0.05, map: dotTexture(), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
   const embers = new THREE.Points(eGeo, eMat);
   group.add(embers);
 

@@ -152,6 +152,7 @@ function buildTerrain(): THREE.Mesh {
   flat.setAttribute('aSnow', new THREE.BufferAttribute(snowK, 1));
   const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   patchMaterial(groundMat, { snow: 1, tint: true, mask: true });
+  paintedGround(groundMat);
   const mesh = new THREE.Mesh(flat, groundMat);
   mesh.receiveShadow = true;
   return mesh;
@@ -267,17 +268,23 @@ function buildMountains(): { group: THREE.Group; summit: THREE.Vector3 } {
   const fn = flat.attributes.normal as THREE.BufferAttribute;
   const colors = new Float32Array(fp.count * 3);
   const c = new THREE.Color();
-  const stone = new THREE.Color('#58607a');
-  const shade = new THREE.Color('#3e4560');
+  const stone = new THREE.Color('#5a627e');
+  const shade = new THREE.Color('#3a4058');
+  const ridgeLit = new THREE.Color('#8a8ea4');
   for (let i = 0; i < fp.count; i++) {
     const y = fp.getY(i);
     const x = fp.getX(i);
     const z = fp.getZ(i);
-    // Snow holds on the gentler faces, so ridges and gullies show as painted strokes of rock.
-    const snowLine = 140 + (fbm(x * 0.02, z * 0.02, 2) - 0.5) * 60;
-    const gentle = THREE.MathUtils.smoothstep(fn.getY(i), 0.45, 0.8);
-    c.copy(stone).lerp(shade, fbm(x * 0.01 + 4, z * 0.01, 2) * 0.8);
-    if (y > snowLine) c.lerp(COL.snow, Math.min(0.95, ((y - snowLine) / 35) * (0.35 + gentle * 0.65)));
+    const nx = fn.getX(i);
+    const ny = fn.getY(i);
+    // Gullies: ridged noise down the faces, so snow lies in streaks and rock shows in the creases.
+    const g = 1 - Math.abs(fbm(x * 0.035 + z * 0.01, z * 0.012 + y * 0.02, 3) * 2 - 1);
+    const snowLine = 135 + (fbm(x * 0.02, z * 0.02, 2) - 0.5) * 60;
+    const gentle = THREE.MathUtils.smoothstep(ny, 0.4, 0.8);
+    c.copy(stone).lerp(shade, fbm(x * 0.01 + 4, z * 0.01, 2) * 0.7 + (1 - g) * 0.35);
+    // Faces turned toward the evening sun (west) are a touch lighter: painted ridgelines.
+    c.lerp(ridgeLit, Math.max(0, -nx) * 0.35 * g);
+    if (y > snowLine) c.lerp(COL.snow, Math.min(0.95, ((y - snowLine) / 35) * (0.25 + gentle * 0.55 + g * 0.35)));
     colors.set([c.r, c.g, c.b], i * 3);
   }
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
@@ -285,7 +292,7 @@ function buildMountains(): { group: THREE.Group; summit: THREE.Vector3 } {
   // painted aerial perspective rather than a pale cut-out.
   const rangeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   rangeMat.onBeforeCompile = (sh) => {
-    sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', '#ifdef USE_FOG\n float fogFactor = smoothstep( fogNear, fogFar, vFogDepth ) * 0.55;\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', '#ifdef USE_FOG\n float fogFactor = smoothstep( fogNear, fogFar, vFogDepth ) * 0.42;\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif');
   };
   rangeMat.customProgramCacheKey = () => 'range-haze';
   g.add(new THREE.Mesh(flat, rangeMat));
@@ -341,6 +348,7 @@ function buildMidlands(): THREE.Mesh {
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const midMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   patchMaterial(midMat, { snow: 0.9, tint: true });
+  paintedGround(midMat);
   const mesh = new THREE.Mesh(flat, midMat);
   mesh.receiveShadow = false;
   return mesh;
@@ -596,6 +604,48 @@ export function patchMaterial(mat: THREE.Material, o: Patch): void {
     shader.fragmentShader = fs;
   };
   mat.customProgramCacheKey = () => `patch-${JSON.stringify(o)}`;
+}
+
+/**
+ * Brushwork on the ground: two scales of stretched noise vary the paint, so earth and grass
+ * read as dabs and strokes rather than a flat fill. World-space, so it never swims.
+ */
+export function paintedGround(mat: THREE.Material): void {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('void main() {', 'varying vec3 vGW;\nvoid main() {')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        'void main() {',
+        `varying vec3 vGW;
+        float gh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float gn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(gh(i), gh(i + vec2(1.0, 0.0)), f.x), mix(gh(i + vec2(0.0, 1.0)), gh(i + vec2(1.0, 1.0)), f.x), f.y); }
+        void main() {`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          vec2 q = vGW.xz;
+          // Strokes: stretched along a slowly turning direction, like a dry brush.
+          float a = gn(q * 0.05) * 6.28;
+          vec2 dir = vec2(cos(a), sin(a));
+          vec2 sp = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+          float stroke = gn(sp * vec2(0.6, 2.6));
+          float dab = gn(q * 1.7 + 13.0);
+          float big = gn(q * 0.18 + 5.0);
+          diffuseColor.rgb *= 0.86 + stroke * 0.2 + dab * 0.08;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.04, 0.9), smoothstep(0.55, 0.85, big) * 0.6);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.9, 0.97, 1.05), smoothstep(0.45, 0.15, big) * 0.5);
+        }`,
+      );
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  mat.customProgramCacheKey = () => key() + '-painted';
 }
 
 /** Bend a material's vertices with the shared wind, by height above `base` squared times `k`. */

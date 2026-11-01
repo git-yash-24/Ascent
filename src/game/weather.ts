@@ -141,8 +141,9 @@ export class Air {
           gl_PointSize = uSize * (0.6 + 0.8 * aSeed.y) * uPr * 420.0 / max(0.5, -mv.z);
           gl_Position = projectionMatrix * mv;
         }`,
-      fragmentShader: `uniform vec3 uA; uniform vec3 uB; uniform float uOpacity; varying float vA; varying float vK;
-        void main(){ float r = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.15, r); gl_FragColor = vec4(mix(uA, uB, vK), a * vA * uOpacity); }`,
+      fragmentShader: `uniform vec3 uA; uniform vec3 uB; uniform float uOpacity; uniform float uBlink; varying float vA; varying float vK;
+        void main(){ float r = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.15, r); // Fireflies burn bright enough to bloom.
+          gl_FragColor = vec4(mix(uA, uB, vK) * (1.0 + uBlink * 3.5 * smoothstep(0.3, 0.0, r)), a * vA * uOpacity); }`,
     });
     this.points = new THREE.Points(g, m);
     this.points.frustumCulled = false;

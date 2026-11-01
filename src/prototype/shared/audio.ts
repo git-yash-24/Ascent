@@ -33,6 +33,8 @@ export interface Sound {
   thunder(delay: number, power: number): void;
   /** Crickets on warm nights, 0 to 1. */
   setCrickets(level: number): void;
+  /** The brook: 0 out of earshot, 1 right beside it. */
+  setBrook(level: number): void;
 }
 
 export function createSound(): Sound {
@@ -54,6 +56,9 @@ export function createSound(): Sound {
   let rainLevel = 0;
   let crickets = 0;
   let cricketTimer = 0;
+  let brookGain: GainNode | null = null;
+  let brookLevel = 0;
+  let bubbleTimer = 0;
 
   const now = (): number => ctx?.currentTime ?? 0;
 
@@ -161,6 +166,48 @@ export function createSound(): Sound {
         lfo2.start();
         wind.connect(wf).connect(wg).connect(master);
         windGain = wg;
+        // The brook: two bands of noise wandering in pitch (the rush and the chatter), and now and
+        // then a bubble, a tiny rising tone, where the water tumbles over the stones.
+        {
+          const bg = ctx.createGain();
+          bg.gain.value = 0;
+          for (const [freq, q, depth, rate, g0] of [[700, 0.9, 260, 0.9, 0.5], [2400, 1.2, 700, 1.7, 0.18]] as const) {
+            const src = loopNoise(ctx, noise);
+            const f = ctx.createBiquadFilter();
+            f.type = 'bandpass';
+            f.frequency.value = freq;
+            f.Q.value = q;
+            const l = ctx.createOscillator();
+            l.frequency.value = rate;
+            const lg = ctx.createGain();
+            lg.gain.value = depth;
+            l.connect(lg).connect(f.frequency);
+            l.start();
+            const g = ctx.createGain();
+            g.gain.value = g0;
+            src.connect(f).connect(g).connect(bg);
+          }
+          bg.connect(master);
+          brookGain = bg;
+          bubbleTimer = window.setInterval(() => {
+            if (!ctx || muted || brookLevel < 0.05) return;
+            const n = Math.random() < 0.6 * brookLevel ? 1 + Math.floor(Math.random() * 2) : 0;
+            for (let i = 0; i < n; i++) {
+              const t0 = now() + Math.random() * 0.25;
+              const o = ctx.createOscillator();
+              const g = ctx.createGain();
+              const f0 = 500 + Math.random() * 700;
+              o.frequency.setValueAtTime(f0, t0);
+              o.frequency.exponentialRampToValueAtTime(f0 * (1.6 + Math.random() * 0.8), t0 + 0.04);
+              g.gain.setValueAtTime(0, t0);
+              g.gain.linearRampToValueAtTime(0.025 * brookLevel, t0 + 0.006);
+              g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.06);
+              o.connect(g).connect(master!);
+              o.start(t0);
+              o.stop(t0 + 0.08);
+            }
+          }, 260);
+        }
         // Birds: a short falling whistle now and then, only in fair daylight.
         birdTimer = window.setInterval(() => {
           if (!ctx || muted || daylight < 0.6 || windLevel > 0.5 || Math.random() > 0.18) return;
@@ -328,6 +375,10 @@ export function createSound(): Sound {
       if (ctx && rainGain) rainGain.gain.setTargetAtTime(level * 0.09, now(), 1.2);
       if (ctx && level > 0.05 && Math.random() < level * 0.5) burst({ freq: 2500 + Math.random() * 2500, q: 3, gain: 0.03 * level, decay: 0.03, at: now() + Math.random() * 0.2 });
     },
+    setBrook(level: number) {
+      brookLevel = Math.max(0, Math.min(1, level));
+      if (ctx && brookGain) brookGain.gain.setTargetAtTime(brookLevel * 0.09, now(), 0.8);
+    },
     setCrickets(level: number) {
       crickets = level;
     },
@@ -358,6 +409,7 @@ export function createSound(): Sound {
     window.clearInterval(crackleTimer);
     window.clearInterval(birdTimer);
     window.clearInterval(cricketTimer);
+    window.clearInterval(bubbleTimer);
   });
   return sound;
 }

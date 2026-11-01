@@ -93,3 +93,21 @@ light (the lantern) at intensity 0 until it is built and dark.
 - New idle acts: eating an apple, pouring from the kettle.
 - A hood tassel on a spring; a cloth cape with secondary motion.
 - Hand-painted textures for the tent and ground (needs an asset budget decision).
+
+## Revision 2: indie-grade rendering (2 Nov 2026)
+
+Xander: "make it look like a very polished indie game and make it feel alive."
+
+| Layer | Where | What |
+| --- | --- | --- |
+| Camera's eye | `src/game/post.ts` | HDR scene buffer (MSAA), dual-filter bloom, sun light shafts through gaps, depth of field on Ari in the near views, ACES curve, split-tone grade, vignette, lens fringe, grain. Night opens the eye (exposure), like real eyes. Tier 0 skips it. `?nopost` turns it off for comparison. |
+| Atmosphere | `src/game/style.ts` | Fog glows toward the key light (sun in-scattering), and a valley haze lies low and thins with height and with a high camera. |
+| Grass | `src/game/grass.ts` | 70k curved blades (scaled by tier): gust waves roll downwind, blades tremble, part round Ari's feet and the hearth, sink under snow, glow when the sun is behind them, turn gold in late summer and rust in autumn. |
+| Trees | `src/game/trees.ts` | Painted firs with drooping jagged tiers, broadleaves with cloud-like canopies that turn and fall bare by season, bushes; leaves shimmer; snow settles on top. |
+| Brook | `src/game/water.ts`, `world.ts` | Carved channel, painted flowing water (fresnel sky, glints, bank foam), a ford of stepping stones where the trail crosses, mist in the cool hours, and its own sound. |
+| Ground | `src/game/clutter.ts`, `world.ts` | Brushwork in the ground shader; ferns, mushrooms, reeds, pebbles, autumn leaf fall; glowcaps that light the banks at night. |
+| Ari | `climber.ts`, `src/game/ariLook.ts`, `src/game/cloth.ts` | Smoother forms, a long drooping hood, eyes that glow through the bloom, and a simulated cloak and scarf (verlet cloth, wind, body and seat collision). |
+| Camera | `stage.ts` | A slow handheld drift in the near views (off with reduced motion). |
+
+A rigged CC0 character (KayKit Rogue_Hooded) was tried and rejected: polished, but it read as an
+asset-pack chibi and erased Ari's identity. The file is kept in `assets/kaykit/` for reference only.

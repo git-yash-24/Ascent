@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three';
 import { groundHeight } from '../prototype/feel3d/world';
+import { stoneGeometry } from './style';
 import type { Accent, TrailSymbol } from '../core/model/types';
 
 export const ACCENTS: Record<Accent, string> = {
@@ -119,11 +120,41 @@ export function buildKit(scene: THREE.Scene): Kit {
   const group = new THREE.Group();
 
   // Your place across the fire: a log seat and a cup.
-  const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 1.2, 7), lambert('#4a3628'));
+  // Your log: bark round the sides, pale end grain with rings, a cap of moss on top.
+  const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 1.2, 14), lambert('#6a4a32'));
   seat.rotation.z = Math.PI / 2;
   seat.rotation.y = 0.2;
   seat.position.copy(ground(0.25, 1.3, 0.16));
   group.add(shadowed(seat));
+  for (const end of [-1, 1]) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const g2 = cv.getContext('2d');
+    if (g2) {
+      g2.fillStyle = '#c9a06a';
+      g2.fillRect(0, 0, 64, 64);
+      g2.strokeStyle = 'rgba(120,80,40,0.55)';
+      for (let r = 4; r < 32; r += 4 + (r % 3)) {
+        g2.beginPath();
+        g2.arc(32 + Math.sin(r) * 1.5, 32, r, 0, Math.PI * 2);
+        g2.stroke();
+      }
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const cap = new THREE.Mesh(new THREE.CircleGeometry(0.165 + (end > 0 ? 0.012 : 0), 14), new THREE.MeshLambertMaterial({ map: tex }));
+    cap.position.set(0, end * 0.601, 0);
+    cap.rotation.x = end * -Math.PI / 2;
+    seat.add(cap);
+  }
+  // Tufts of moss along the top (the log's local +x is up once it lies down).
+  const mossMat = lambert('#5f7a38');
+  for (const [y, s2] of [[-0.35, 1], [-0.12, 0.7], [0.2, 0.85], [0.42, 0.6]] as const) {
+    const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.07 * s2, 10, 8), mossMat);
+    tuft.scale.set(0.45, 1.3, 1.1);
+    tuft.position.set(0.15, y, (y * 7) % 0.06);
+    seat.add(tuft);
+  }
   const yourCup = buildCup();
   yourCup.position.copy(ground(0.85, 1.05));
   group.add(yourCup);
@@ -144,8 +175,8 @@ export function buildKit(scene: THREE.Scene): Kit {
   group.add(shadowed(pole), cloth);
 
   // The first-camp carving: your symbol cut into a flat rock.
-  const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), lambert('#6e6a63'));
-  rock.scale.set(1.2, 0.35, 0.9);
+  const rock = new THREE.Mesh(stoneGeometry(33, '#66703f', '#857f78'), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  rock.scale.set(1.0, 0.32, 0.78);
   rock.position.copy(ground(1.9, 0.5, 0.06));
   const carveMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85, depthWrite: false });
   const carve = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.42), carveMat);

@@ -92,7 +92,11 @@ function farRing(eye: THREE.Vector3, look: THREE.Vector3): THREE.Mesh {
       const y = pos[i * 3 + 1]!;
       const c = rock.clone().lerp(rock2, 0.5 + 0.5 * Math.sin(pos[i * 3]! * 0.03 + pos[i * 3 + 2]! * 0.02));
       const gentle = THREE.MathUtils.smoothstep(gn.getY(i), 0.35, 0.75);
-      if (y > pk.snowLine) c.lerp(snow, Math.min(0.95, ((y - pk.snowLine) / (pk.h * 0.16)) * (0.3 + gentle * 0.7)));
+      const px = pos[i * 3]!;
+      const pz = pos[i * 3 + 2]!;
+      const gully = Math.abs(Math.sin(px * 0.045 + pz * 0.03 + y * 0.02) + Math.sin(px * 0.11 - pz * 0.07) * 0.5);
+      c.lerp(rock2.clone().multiplyScalar(0.8), Math.max(0, gn.getX(i)) * 0.4);
+      if (y > pk.snowLine) c.lerp(snow, Math.min(0.9, ((y - pk.snowLine) / (pk.h * 0.2)) * (0.2 + gentle * 0.5 + Math.min(1, gully) * 0.3)));
       col.push(c.r, c.g, c.b);
     }
   }

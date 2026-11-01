@@ -14,7 +14,7 @@
  * The checklist never waits on any of this; without WebGL the screens run on a painted sky.
  */
 import * as THREE from 'three';
-import { buildWorld, glowTexture, groundHeight, pathX, patchMaterial, treeWind, weatherFx } from '../prototype/feel3d/world';
+import { buildWorld, glowTexture, groundHeight, pathX, patchMaterial, streamDistance, treeWind, weatherFx } from '../prototype/feel3d/world';
 import { dayOfYear, moonAge, skyFor, sunAt, Wind, LATITUDE } from './sky';
 import { goldenOf, outfitFor, shelterFor, showerPulse, todaysConditions, conditionsFor, kindFor, seasonOf, type Conditions, type Kind, type Season } from './conditions';
 import { Air, Bolt, Puddles, Rain, Shafts } from './weather';
@@ -1652,6 +1652,12 @@ export class Stage {
     this.puddles.update(this.wet * (1 - this.lying), look.horizon.clone().lerp(look.zenith, 0.4));
     const falling = c.rain * (c.kind === 'showers' ? showerPulse(this.clock) : 1);
     this.sound.setRain(this.view < 2.5 ? falling : falling * 0.3);
+    // The brook's voice: louder the closer the camera is to it.
+    {
+      const cp = this.camera.position;
+      const d = streamDistance(cp.x, cp.z).d;
+      this.sound.setBrook(clamp01(1 - (d - 2) / 22) * (this.view < 2.5 ? 1 : 0.4) * (c.lying > 0.6 ? 0.4 : 1));
+    }
     this.sound.setCrickets(this.night * (c.season === 'summer' || c.season === 'spring' ? 1 : 0.25) * (c.rain || c.snow ? 0 : 1) * (1 - c.cold));
     // God rays across camp in the golden hour, when the camp is in view.
     const beamI = this.golden * Math.pow(1 - cover, 1.5) * (1 - clamp01(this.view - 1.3)) * 0.16 * (1 - c.fog);
