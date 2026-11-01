@@ -60,8 +60,8 @@ void main() {
   vec3 V = normalize(cameraPosition - vW);
   float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
   vec3 body = mix(uShallow, uDeep, smoothstep(0.1, 0.75, mid)) * (0.85 + h * 0.3);
-  vec3 sky = mix(uSky, uZenith, clamp(reflect(-V, N).y * 1.5, 0.0, 1.0));
-  vec3 col = mix(body, sky, 0.25 + fres * 0.6);
+  vec3 sky = mix(uSky, uZenith, clamp(reflect(-V, N).y * 0.8, 0.0, 0.6));
+  vec3 col = mix(body, sky, 0.18 + fres * 0.45);
   // Glints of sun or moon on the ripples.
   vec3 R = reflect(-uLight, N);
   float glint = pow(max(dot(R, V), 0.0), 120.0) * smoothstep(0.55, 0.8, n3 + n2 * 0.4);

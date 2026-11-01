@@ -146,7 +146,10 @@ function buildTerrain(): THREE.Mesh {
       c.lerp(new THREE.Color('#5a4c3c'), THREE.MathUtils.smoothstep(STREAM_HALF + 0.9, STREAM_HALF + 0.2, sdist) * 0.8);
     }
     colors.set([c.r, c.g, c.b], i * 3);
-    snowK[i] = dp < 1.1 && cz < 160 ? 0.25 : camp < 2.2 ? 0 : 0.75 + 0.25 * fbm(cx * 0.2, cz * 0.2, 2);
+    // Soft edges: the trodden path and the hearth fade into the snow, never in steps.
+    const open = 0.75 + 0.25 * fbm(cx * 0.2, cz * 0.2, 2);
+    const trod = cz < 160 ? THREE.MathUtils.lerp(0.25, 1, THREE.MathUtils.smoothstep(dp, 0.5, 2.2)) : 1;
+    snowK[i] = open * trod * THREE.MathUtils.smoothstep(camp, 1.6, 3.2);
   }
   flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   flat.setAttribute('aSnow', new THREE.BufferAttribute(snowK, 1));
