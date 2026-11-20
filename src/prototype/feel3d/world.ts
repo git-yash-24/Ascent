@@ -1,0 +1,764 @@
+import * as THREE from 'three';
+import { fbm, mulberry32 } from '../shared/noise';
+import { stoneGeometry } from '../../game/style';
+
+/** Where the route runs: a gentle S through the foothills, rising toward the mountain (-z). */
+export function pathX(z: number): number {
+  return 3 * Math.sin(z * 0.045) + 1.5 * Math.sin(z * 0.11);
+}
+
+/**
+ * The brook: it comes down out of the forest on the right, crosses the route at a ford of
+ * stepping stones a dozen metres beyond camp (between the first two daily camps, where the
+ * camera's view runs out across the meadow), and wanders away left into the trees. A polyline, sampled from a
+ * smooth curve; the ground is carved along it (groundHeight) and the water drawn over it (water.ts).
+ */
+export const STREAM: Array<[number, number]> = (() => {
+  const ctrl: Array<[number, number]> = [[34, -46], [24, -28], [14, -16.5], [5, -12.6], [-3, -12.2], [-10, -10.6], [-17, -6.8], [-25, -0.5], [-33, 8], [-45, 21]];
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {
+    const p0 = ctrl[Math.max(0, i - 1)]!;
+    const p1 = ctrl[i]!;
+    const p2 = ctrl[i + 1]!;
+    const p3 = ctrl[Math.min(ctrl.length - 1, i + 2)]!;
+    for (let k = 0; k < 6; k++) {
+      const t = k / 6;
+      const t2 = t * t;
+      const t3 = t2 * t;
+      const f = (a: number, b: number, c: number, d: number): number => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
+      out.push([f(p0[0], p1[0], p2[0], p3[0]), f(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  out.push(ctrl[ctrl.length - 1]!);
+  return out;
+})();
+export const STREAM_HALF = 1.15;
+
+/** Distance from (x, z) to the brook's centre line, and how far along it (0..1). */
+export function streamDistance(x: number, z: number): { d: number; u: number } {
+  if (x < -50 || x > 40 || z < -52 || z > 28) return { d: 99, u: 0 };
+  let best = 99;
+  let bu = 0;
+  for (let i = 0; i < STREAM.length - 1; i++) {
+    const a = STREAM[i]!;
+    const b = STREAM[i + 1]!;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz)));
+    const d = Math.hypot(x - a[0] - dx * t, z - a[1] - dz * t);
+    if (d < best) {
+      best = d;
+      bu = (i + t) / (STREAM.length - 1);
+    }
+  }
+  return { d: best, u: bu };
+}
+
+/**
+ * Ground height at (x, z). The slope rises toward -z; the camp clearing at the origin is flat.
+ * Around camp the valley opens into a wide, uneven meadow (Xander, 13 Oct: "mostly flat but with
+ * unequal spaces, so we can see the sky while camping"): low hummocks and hollows, the walls
+ * pushed back, so the sky, the clouds and the stars come down to a low horizon.
+ */
+export function groundHeight(x: number, z: number): number {
+  const meadow = 1 - THREE.MathUtils.smoothstep(Math.hypot(x * 0.35, z), 80, 420);
+  const slope = -z * 0.14 * (1 - meadow * 0.8);
+  const hills = (fbm(x * 0.03 + 11, z * 0.03 + 7) - 0.5) * 14;
+  const fromPath = Math.abs(x - pathX(z));
+  // Toward the sunset (west and north-west, as the sky is turned) the hills stay low, a long
+  // saddle, so the evening sun and its glow are seen from camp instead of a wall.
+  const r = Math.hypot(x, z) || 1;
+  const west = Math.max(0, (-x * 0.87 - z * 0.5) / r);
+  const saddle = 1 - 0.95 * west * west * (1 - THREE.MathUtils.smoothstep(r, 1400, 2000));
+  const valley = Math.pow(Math.max(0, fromPath - 3) * 0.09, 1.35) * 6 * (1 - meadow * 0.97) * saddle;
+  const fine = (fbm(x * 0.35, z * 0.35, 2) - 0.5) * 0.35;
+  // Hummocks and hollows: knee- to head-high, never under the camp or the path.
+  const hummock = (fbm(x * 0.11 + 3, z * 0.11 + 5, 3) - 0.45) * 2.6 * meadow * THREE.MathUtils.smoothstep(Math.hypot(x, z), 7, 16);
+  let h = slope + hills * Math.min(1, fromPath / 14) * (1 - meadow * 0.9) + valley + fine + hummock;
+  // Flatten the camp clearing and the path so he walks on even ground.
+  const camp = Math.hypot(x, z);
+  const campBlend = THREE.MathUtils.smoothstep(camp, 4, 9);
+  h = THREE.MathUtils.lerp(0.02 * fine, h, campBlend);
+  const pathBlend = THREE.MathUtils.smoothstep(fromPath, 0.8, 2.6);
+  const onPath = slope + (fbm(z * 0.05, 3) - 0.5) * 1.2 * Math.min(1, Math.abs(z) / 10);
+  const out = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0, onPath, campBlend), h, pathBlend);
+  // The valley walls level off into high, rolling shoulders instead of climbing without end:
+  // unchanged below 200 m (everything the camp and the trail see), a soft ceiling above it, so
+  // the year view looks over them rather than into a kilometre-high wall.
+  // The brook's bed: a soft channel with sloping banks.
+  const sd = streamDistance(x, z).d;
+  const carved = sd < STREAM_HALF + 1.5 ? out - 0.62 * THREE.MathUtils.smoothstep(STREAM_HALF + 1.5, STREAM_HALF, sd) : out;
+  if (carved <= 200) return carved;
+  const ceiling = 110 + 90 * fbm(x * 0.004 + 5, z * 0.004 + 9, 2);
+  return 200 + ceiling * (1 - Math.exp(-(carved - 200) / ceiling));
+}
+
+// The painted palette (docs/design/art-direction.md): olive and sage meadow with lush blotches,
+// warm ochre where it is dry, lavender-grey stone, a warm earth path.
+const COL = {
+  grassLow: new THREE.Color('#5b6a38'),
+  grassDry: new THREE.Color('#968449'),
+  lush: new THREE.Color('#47703a'),
+  rock: new THREE.Color('#7b7470'),
+  dirt: new THREE.Color('#7a5a40'),
+  snow: new THREE.Color('#e4e9f0'),
+  forest: new THREE.Color('#34492e'),
+};
+
+function buildTerrain(): THREE.Mesh {
+  const size = 360;
+  // Fine enough to carve the brook's channel and the hummocks round camp.
+  const seg = 260;
+  const geo = new THREE.PlaneGeometry(size, size, seg, seg);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(0, 0, -20);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    pos.setY(i, groundHeight(x, z));
+  }
+  // Smooth, painted ground: normals from the shared grid, colour per vertex in soft blotches.
+  geo.computeVertexNormals();
+  const flat = geo;
+  const fp = flat.attributes.position as THREE.BufferAttribute;
+  const fn = flat.attributes.normal as THREE.BufferAttribute;
+  const colors = new Float32Array(fp.count * 3);
+  // Where snow can lie: not on the trodden path or by the fire, patchy elsewhere.
+  const snowK = new Float32Array(fp.count);
+  const c = new THREE.Color();
+  const rnd = mulberry32(7);
+  for (let i = 0; i < fp.count; i++) {
+    const cx = fp.getX(i);
+    const cz = fp.getZ(i);
+    const steep = 1 - fn.getY(i);
+    c.copy(COL.grassLow).lerp(COL.grassDry, THREE.MathUtils.clamp(fbm(cx * 0.05, cz * 0.05, 2) * 1.3 - 0.2 + rnd() * 0.08, 0, 1));
+    c.lerp(COL.lush, THREE.MathUtils.smoothstep(fbm(cx * 0.14 + 31, cz * 0.14 + 17, 2), 0.5, 0.72) * 0.75);
+    if (steep > 0.18) c.lerp(COL.rock, THREE.MathUtils.smoothstep(steep, 0.18, 0.42));
+    const dp = Math.abs(cx - pathX(cz));
+    if (dp < 1.3 && cz < 160) c.lerp(COL.dirt, THREE.MathUtils.smoothstep(1.3 - dp, 0, 0.9));
+    const camp = Math.hypot(cx, cz);
+    if (camp < 3.4) c.lerp(COL.dirt, 0.65 * THREE.MathUtils.smoothstep(3.4 - camp, 0, 1.6));
+    // The brook's bed and damp banks: dark wet earth and pebbles, lush moss on the banks.
+    const sdist = streamDistance(cx, cz).d;
+    if (sdist < STREAM_HALF + 2.2) {
+      c.lerp(COL.lush, THREE.MathUtils.smoothstep(STREAM_HALF + 2.2, STREAM_HALF + 0.6, sdist) * 0.6);
+      c.lerp(new THREE.Color('#5a4c3c'), THREE.MathUtils.smoothstep(STREAM_HALF + 0.9, STREAM_HALF + 0.2, sdist) * 0.8);
+    }
+    colors.set([c.r, c.g, c.b], i * 3);
+    // Soft edges: the trodden path and the hearth fade into the snow, never in steps.
+    const open = 0.75 + 0.25 * fbm(cx * 0.2, cz * 0.2, 2);
+    const trod = cz < 160 ? THREE.MathUtils.lerp(0.25, 1, THREE.MathUtils.smoothstep(dp, 0.5, 2.2)) : 1;
+    snowK[i] = open * trod * THREE.MathUtils.smoothstep(camp, 1.6, 3.2);
+  }
+  flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  flat.setAttribute('aSnow', new THREE.BufferAttribute(snowK, 1));
+  const groundMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  patchMaterial(groundMat, { snow: 1, tint: true, mask: true });
+  paintedGround(groundMat);
+  const mesh = new THREE.Mesh(flat, groundMat);
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/** `clear`: no cone trees within this radius of camp (a modelled forest stands there instead). */
+function buildTrees(clear = 11): THREE.Group {
+  const g = new THREE.Group();
+  const trunkGeo = new THREE.CylinderGeometry(0.08, 0.12, 1, 5);
+  trunkGeo.translate(0, 0.5, 0);
+  // Painted pines: soft tiers that flare at the skirt, like brush-stroked cones.
+  const crownGeo = new THREE.ConeGeometry(1.0, 2.4, 9, 2);
+  crownGeo.translate(0, 2.0, 0);
+  const crown2 = new THREE.ConeGeometry(0.72, 1.9, 9, 2);
+  crown2.translate(0, 3.15, 0);
+  const count = 340;
+  const trunks = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: '#4a3526' }), count);
+  const crownMat = new THREE.MeshLambertMaterial({ color: '#30503a' });
+  // Crowns sway in the shared wind: bent in world space by height, each tree on its own phase.
+  swayInWind(crownMat, 1.0, 0.035, 1);
+  const crowns = new THREE.InstancedMesh(crownGeo, crownMat, count);
+  const crowns2 = new THREE.InstancedMesh(crown2, crownMat, count);
+  const rnd = mulberry32(21);
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const s = new THREE.Vector3();
+  const p = new THREE.Vector3();
+  let n = 0;
+  let guard = 0;
+  while (n < count && guard++ < 20000) {
+    const x = (rnd() - 0.5) * 300;
+    const z = -170 + rnd() * 320;
+    if (Math.abs(x - pathX(z)) < 4.5) continue;
+    if (Math.hypot(x, z) < clear) continue;
+    if (fbm(x * 0.02 + 40, z * 0.02, 2) < 0.48) continue; // clusters, not a carpet
+    const scale = 0.8 + rnd() * 1.1;
+    p.set(x, groundHeight(x, z) - 0.1, z);
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * Math.PI * 2);
+    s.set(scale, scale * (0.9 + rnd() * 0.3), scale);
+    m.compose(p, q, s);
+    trunks.setMatrixAt(n, m);
+    crowns.setMatrixAt(n, m);
+    crowns2.setMatrixAt(n, m);
+    n++;
+  }
+  trunks.count = crowns.count = crowns2.count = n;
+  // Trees near the camp catch firelight and cast shadow into it.
+  g.add(trunks, crowns, crowns2);
+  return g;
+}
+
+function buildRocks(): THREE.InstancedMesh {
+  const geo = stoneGeometry(5, '#5d6c3a', '#857d76', 1);
+  const count = 150;
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }), count);
+  const rnd = mulberry32(5);
+  const m = new THREE.Matrix4();
+  const e = new THREE.Euler();
+  const q = new THREE.Quaternion();
+  let n = 0;
+  let guard = 0;
+  while (n < count && guard++ < 5000) {
+    const x = (rnd() - 0.5) * 160;
+    const z = -120 + rnd() * 240;
+    if (Math.abs(x - pathX(z)) < 1.6) continue;
+    if (Math.hypot(x, z) < 3.6) continue;
+    if (streamDistance(x, z).d < STREAM_HALF + 0.8) continue;
+    const sc = 0.25 + rnd() * rnd() * 2.2;
+    e.set((rnd() - 0.5) * 0.4, rnd() * 6.3, (rnd() - 0.5) * 0.4);
+    q.setFromEuler(e);
+    m.compose(new THREE.Vector3(x, groundHeight(x, z) + sc * 0.15, z), q, new THREE.Vector3(sc, sc * 0.7, sc));
+    mesh.setMatrixAt(n++, m);
+  }
+  mesh.count = n;
+  mesh.receiveShadow = true;
+  return mesh;
+}
+
+/**
+ * The far range as one height-field, like the near terrain: Ambar's peak (with the Ninth Hut's light
+ * near the top) and its shoulders. Faceted like the foreground, softened by distance fog.
+ */
+const AMBAR = { x: -120, z: -900, h: 360 };
+const PEAKS: Array<{ x: number; z: number; h: number; s: number }> = [
+  { x: AMBAR.x, z: AMBAR.z, h: AMBAR.h, s: 210 },
+  { x: 230, z: -780, h: 210, s: 160 },
+  { x: -440, z: -760, h: 190, s: 170 },
+  { x: 140, z: -560, h: 110, s: 120 },
+  { x: -260, z: -540, h: 100, s: 130 },
+];
+
+export function rangeHeight(x: number, z: number): number {
+  let h = 0;
+  for (const p of PEAKS) {
+    const d = Math.hypot(x - p.x, z - p.z) / p.s;
+    // A sharp-ish peak: exponential falloff, with ridges cut by noise.
+    const ridge = 0.75 + 0.5 * fbm(x * 0.006 + p.x, z * 0.006 + p.z, 3);
+    h = Math.max(h, p.h * Math.exp(-d * 1.6) * ridge);
+  }
+  return h - 40 + fbm(x * 0.01, z * 0.01, 3) * 40;
+}
+
+function buildMountains(): { group: THREE.Group; summit: THREE.Vector3 } {
+  const g = new THREE.Group();
+  const geo = new THREE.PlaneGeometry(1800, 760, 150, 64);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(-60, 0, -860);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) pos.setY(i, rangeHeight(pos.getX(i), pos.getZ(i)));
+  geo.computeVertexNormals();
+  const flat = geo;
+  const fp = flat.attributes.position as THREE.BufferAttribute;
+  const fn = flat.attributes.normal as THREE.BufferAttribute;
+  const colors = new Float32Array(fp.count * 3);
+  const c = new THREE.Color();
+  const stone = new THREE.Color('#5a627e');
+  const shade = new THREE.Color('#3a4058');
+  const ridgeLit = new THREE.Color('#8a8ea4');
+  for (let i = 0; i < fp.count; i++) {
+    const y = fp.getY(i);
+    const x = fp.getX(i);
+    const z = fp.getZ(i);
+    const nx = fn.getX(i);
+    const ny = fn.getY(i);
+    // Gullies: ridged noise down the faces, so snow lies in streaks and rock shows in the creases.
+    const g = 1 - Math.abs(fbm(x * 0.035 + z * 0.01, z * 0.012 + y * 0.02, 3) * 2 - 1);
+    const snowLine = 135 + (fbm(x * 0.02, z * 0.02, 2) - 0.5) * 60;
+    const gentle = THREE.MathUtils.smoothstep(ny, 0.4, 0.8);
+    c.copy(stone).lerp(shade, fbm(x * 0.01 + 4, z * 0.01, 2) * 0.7 + (1 - g) * 0.35);
+    // Faces turned toward the evening sun (west) are a touch lighter: painted ridgelines.
+    c.lerp(ridgeLit, Math.max(0, -nx) * 0.35 * g);
+    if (y > snowLine) c.lerp(COL.snow, Math.min(0.95, ((y - snowLine) / 35) * (0.25 + gentle * 0.55 + g * 0.35)));
+    colors.set([c.r, c.g, c.b], i * 3);
+  }
+  flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  // The range keeps its form through the haze: fog is applied at half strength, so it reads as
+  // painted aerial perspective rather than a pale cut-out.
+  const rangeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  rangeMat.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <fog_fragment>', '#ifdef USE_FOG\n float fogFactor = smoothstep( fogNear, fogFar, vFogDepth ) * 0.42;\n gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif');
+  };
+  rangeMat.customProgramCacheKey = () => 'range-haze';
+  g.add(new THREE.Mesh(flat, rangeMat));
+  const summit = new THREE.Vector3(AMBAR.x, rangeHeight(AMBAR.x, AMBAR.z) - 8, AMBAR.z + 14);
+  return { group: g, summit };
+}
+
+/** Height anywhere on the map: the near terrain, the far range, and the midlands between. */
+export function heightAt(x: number, z: number): number {
+  if (z > -190) return groundHeight(x, z);
+  if (z < -500) return rangeHeight(x, z);
+  return midHeight(x, z);
+}
+
+/**
+ * The midlands: the band between the near terrain and the far range, so the whole route can be
+ * seen from above without a gap. Same faceted look and palette.
+ */
+function buildMidlands(): THREE.Mesh {
+  // One wide ground from the foothills to the range: around and beyond the near terrain (which
+  // sits on top of it), so the map has no edge from above.
+  const geo = new THREE.PlaneGeometry(1560, 960, 120, 74);
+  geo.rotateX(-Math.PI / 2);
+  geo.translate(-40, 0, -30);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const inside = Math.abs(x) < 172 && z < 152 && z > -192;
+    pos.setY(i, inside ? groundHeight(x, z) - 3 : heightAt(x, z));
+  }
+  geo.computeVertexNormals();
+  const flat = geo;
+  const fp = flat.attributes.position as THREE.BufferAttribute;
+  const fn = flat.attributes.normal as THREE.BufferAttribute;
+  const colors = new Float32Array(fp.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < fp.count; i++) {
+    const cx = fp.getX(i);
+    const cz = fp.getZ(i);
+    const cy = fp.getY(i);
+    const ny = fn.getY(i);
+    c.copy(COL.grassLow).lerp(COL.grassDry, fbm(cx * 0.03, cz * 0.03, 2));
+    // Rock on steep faces; height alone only greys it a little, so the high shoulders stay
+    // land (grass, dark forest floor) seen from above, not a pale slab.
+    if (cy > 170) c.lerp(COL.forest, 0.55 * fbm(cx * 0.02 + 7, cz * 0.02 + 3, 2));
+    c.lerp(COL.rock, THREE.MathUtils.clamp((1 - ny) * 2.4 + Math.min(0.3, (cy - 60) / 500), 0, 1));
+    // Snow only on the high shoulders, patchy, so the walls read as land from above.
+    const snowLine = 345 + (fbm(cx * 0.01 + 2, cz * 0.01, 2) - 0.5) * 70;
+    if (cy > snowLine) c.lerp(COL.snow, Math.min(0.6, (cy - snowLine) / 60));
+    colors.set([c.r, c.g, c.b], i * 3);
+  }
+  flat.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const midMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  patchMaterial(midMat, { snow: 0.9, tint: true });
+  paintedGround(midMat);
+  const mesh = new THREE.Mesh(flat, midMat);
+  mesh.receiveShadow = false;
+  return mesh;
+}
+
+function midHeight(x: number, z: number): number {
+  // Continue the near slope's rise, then hand over to the range.
+  const t = THREE.MathUtils.smoothstep(z, -180, -500);
+  const slope = -z * 0.14 + (fbm(x * 0.012 + 3, z * 0.012, 3) - 0.5) * 40;
+  return THREE.MathUtils.lerp(slope, rangeHeight(x, z), t);
+}
+
+function radialTexture(inner: string, outer: string): THREE.CanvasTexture {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 64;
+  const ctx = cv.getContext('2d');
+  if (ctx) {
+    const gr = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, inner);
+    gr.addColorStop(1, outer);
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, 64, 64);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export const glowTexture = (): THREE.CanvasTexture => radialTexture('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
+
+/** A round particle with a soft rim: points drawn with it read as flakes and sparks, not squares. */
+let dot: THREE.CanvasTexture | null = null;
+export function dotTexture(): THREE.CanvasTexture {
+  if (dot) return dot;
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.55, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(16, 16, 16, 0, Math.PI * 2);
+  g.fill();
+  dot = new THREE.CanvasTexture(c);
+  return dot;
+}
+
+/**
+ * The sky dome: gradient, the sun's glow and disc, crepuscular rays fanning from a low sun, and
+ * the moon as a small sphere lit by the sun, so its phase and the tilt of the crescent are real.
+ */
+function buildSky(): THREE.Group {
+  const g = new THREE.Group();
+  const geo = new THREE.SphereGeometry(1800, 32, 16);
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+    uniforms: {
+      zenith: { value: new THREE.Color('#141a33') },
+      mid: { value: new THREE.Color('#4a3a5c') },
+      horizon: { value: new THREE.Color('#d8875a') },
+      sunDir: { value: new THREE.Vector3(-0.9, 0.05, -0.4).normalize() },
+      sunColor: { value: new THREE.Color('#ff9a5c') },
+      sunDisc: { value: 0 },
+      moonDir: { value: new THREE.Vector3(0.5, 0.6, 0.3).normalize() },
+      moonI: { value: 0 },
+      moonLit: { value: 1 },
+      rays: { value: 0 },
+    },
+    vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+    fragmentShader: `uniform vec3 zenith; uniform vec3 mid; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunColor; uniform float sunDisc; uniform vec3 moonDir; uniform float moonI; uniform float moonLit; uniform float rays; varying vec3 vDir;
+      vec2 basis(vec3 d, vec3 c, float r, out float along){ vec3 t = normalize(cross(c, vec3(0.0001, 1.0, 0.0))); vec3 b = cross(t, c); along = dot(d, c); vec3 o = d - c * along; return vec2(dot(o, t), dot(o, b)) / r; }
+      void main(){
+        vec3 d = normalize(vDir);
+        float h = clamp(d.y, -0.2, 1.0);
+        vec3 col = mix(horizon, mid, smoothstep(0.0, 0.18, h));
+        col = mix(col, zenith, smoothstep(0.12, 0.65, h));
+        float s = max(dot(d, sunDir), 0.0);
+        float low = 1.0 - smoothstep(0.0, 0.45, h);
+        col += sunColor * (pow(s, 6.0) * 0.45 * low + pow(s, 48.0) * 0.35 * sunDisc);
+        col += sunColor * smoothstep(0.99935, 0.9997, s) * sunDisc * 1.6;
+        if (rays > 0.001) {
+          float al; vec2 q = basis(d, sunDir, 1.0, al);
+          float a = atan(q.y, q.x);
+          float st = (0.5 + 0.5 * sin(a * 17.0 + sin(a * 5.0) * 3.0)) * (0.55 + 0.45 * sin(a * 43.0 + 1.7));
+          col += sunColor * st * pow(s, 2.5) * (1.0 - smoothstep(0.995, 0.9995, s)) * rays * (0.25 + low * 0.6);
+        }
+        if (moonI > 0.001) {
+          float m; vec2 uv = basis(d, moonDir, 0.021, m);
+          float r2 = dot(uv, uv);
+          if (r2 < 1.0 && m > 0.0) {
+            vec3 t = normalize(cross(moonDir, vec3(0.0001, 1.0, 0.0))); vec3 b = cross(t, moonDir);
+            vec3 n = normalize(uv.x * t + uv.y * b - sqrt(1.0 - r2) * moonDir);
+            float lit = smoothstep(-0.04, 0.1, dot(n, sunDir));
+            float maria = 0.8 + 0.2 * sin(uv.x * 5.0 + 1.3) * sin(uv.y * 4.0 + 0.4);
+            col = mix(col, vec3(0.93, 0.95, 1.0) * maria * (0.05 + lit * 1.1) * min(1.0, moonI), smoothstep(1.0, 0.82, r2));
+          }
+          col += vec3(0.22, 0.27, 0.42) * (pow(max(m, 0.0), 300.0) * 0.6 + pow(max(m, 0.0), 30.0) * 0.12) * moonI * moonLit;
+        }
+        if (h < 0.0) col = mix(horizon * 0.6, horizon, 1.0 + h * 5.0);
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+  g.add(new THREE.Mesh(geo, mat));
+  g.add(buildStars());
+  return g;
+}
+
+/**
+ * The night sky: about 2,600 stars of different brightness and colour, a faint Milky Way, all
+ * turning slowly about the pole (the stage sets the rotation from the hour). Drawn before the
+ * clouds, so clouds cover them.
+ */
+function buildStars(): THREE.Points {
+  const rnd = mulberry32(3);
+  const pos: number[] = [];
+  const size: number[] = [];
+  const tw: number[] = [];
+  const col: number[] = [];
+  const c = new THREE.Color();
+  const put = (x: number, y: number, z: number, sz: number, hue: number): void => {
+    const l = Math.hypot(x, y, z);
+    pos.push((x / l) * 1700, (y / l) * 1700, (z / l) * 1700);
+    size.push(sz);
+    tw.push(rnd());
+    c.setHSL(hue, 0.55, 0.85);
+    col.push(c.r, c.g, c.b);
+  };
+  for (let i = 0; i < 2600; i++) {
+    const y = rnd() * 1.15 - 0.15;
+    const th = rnd() * Math.PI * 2;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const bright = Math.pow(rnd(), 7);
+    put(Math.cos(th) * r, y, Math.sin(th) * r, 3.0 + bright * 6.0, rnd() < 0.3 ? 0.08 : 0.6);
+  }
+  // The Milky Way: dust of faint points along a tilted great circle, and a few soft clouds.
+  const n = new THREE.Vector3(0.62, 0.3, 0.72).normalize();
+  const t = new THREE.Vector3(1, 0, 0).cross(n).normalize();
+  const b = n.clone().cross(t);
+  for (let i = 0; i < 1700; i++) {
+    const a = rnd() * Math.PI * 2;
+    const spread = (rnd() + rnd() + rnd() - 1.5) * 0.16;
+    const p = t.clone().multiplyScalar(Math.cos(a)).addScaledVector(b, Math.sin(a)).addScaledVector(n, spread);
+    const cloud = i % 12 === 0;
+    put(p.x, p.y, p.z, cloud ? 26 + rnd() * 34 : 2.0 + rnd() * 1.4, cloud ? 0.62 : 0.58);
+    if (cloud) tw[tw.length - 1] = -1;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('aSize', new THREE.Float32BufferAttribute(size, 1));
+  g.setAttribute('aTw', new THREE.Float32BufferAttribute(tw, 1));
+  g.setAttribute('aCol', new THREE.Float32BufferAttribute(col, 3));
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+    uniforms: { opacity: { value: 0 }, time: { value: 0 }, pr: { value: 1 } },
+    vertexShader: `attribute float aSize; attribute float aTw; attribute vec3 aCol; uniform float time; uniform float pr; varying vec3 vCol; varying float vA;
+      void main(){
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        float el = wp.y / 1700.0;
+        bool cloud = aTw < 0.0;
+        float tw = cloud ? 1.0 : 0.72 + 0.28 * sin(time * (1.3 + aTw * 2.5) + aTw * 40.0);
+        vA = smoothstep(0.0, 0.14, el) * tw * (cloud ? 0.16 : 1.5) * (1.0 - 0.45 * smoothstep(0.1, 0.0, el));
+        vCol = aCol;
+        gl_PointSize = aSize * pr;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }`,
+    fragmentShader: `uniform float opacity; varying vec3 vCol; varying float vA;
+      void main(){ float r = length(gl_PointCoord - 0.5); float a = smoothstep(0.5, 0.0, r); a = max(a * a, step(r, 0.16) * 0.9); gl_FragColor = vec4(vCol * a * vA * opacity, 1.0); }`,
+  });
+  const pts = new THREE.Points(g, mat);
+  pts.renderOrder = -3;
+  pts.frustumCulled = false;
+  return pts;
+}
+
+/** Shared by every tree crown and by the weather on the ground: the wind, time, snow, wetness, the season's tint. */
+export const treeWind = { wind: { value: new THREE.Vector2(0, 0) }, time: { value: 0 } };
+export const weatherFx = { snow: { value: 0 }, wet: { value: 0 }, tint: { value: new THREE.Color(1, 1, 1) }, grow: { value: 1 } };
+
+export interface Patch {
+  /** Bend with the wind: [base height, strength]. */
+  sway?: [number, number];
+  /** Snow settles on upward faces, times this. */
+  snow?: number;
+  /** The season's tint (ground only). */
+  tint?: boolean;
+  /** A per-vertex `aSnow` attribute masks the snow (the path stays trodden). */
+  mask?: boolean;
+  /** Low plants sink under lying snow (their height times the shared `grow`). */
+  grow?: boolean;
+}
+
+/**
+ * One shader patch for the world's Lambert materials: the wind bends crowns, snow settles on what
+ * faces up, rain darkens, the season tints the ground. Uniforms are shared, so weather changes
+ * cost nothing per material.
+ */
+export function patchMaterial(mat: THREE.Material, o: Patch): void {
+  mat.userData.patched = true;
+  mat.onBeforeCompile = (shader) => {
+    let vs = shader.vertexShader;
+    let fs = shader.fragmentShader;
+    if (o.grow) {
+      shader.uniforms.uGrow = weatherFx.grow;
+      vs = vs.replace('void main() {', 'uniform float uGrow;\nvoid main() {').replace('#include <begin_vertex>', '#include <begin_vertex>\n transformed.y *= uGrow;');
+    }
+    if (o.sway) {
+      shader.uniforms.uWind = treeWind.wind;
+      shader.uniforms.uTime = treeWind.time;
+      vs = vs.replace('void main() {', 'uniform vec2 uWind; uniform float uTime;\nvoid main() {').replace(
+        '#include <project_vertex>',
+        THREE.ShaderChunk.project_vertex.replace(
+          'mvPosition = modelViewMatrix * mvPosition;',
+          `vec4 wp = modelMatrix * mvPosition;
+          float hgt = max(0.0, transformed.y - ${o.sway[0].toFixed(3)});
+          float ph = wp.x * 0.13 + wp.z * 0.11;
+          wp.xz += uWind * hgt * hgt * ${o.sway[1].toFixed(4)} * (0.65 + 0.35 * sin(uTime * 1.9 + ph));
+          mvPosition = viewMatrix * wp;`,
+        ),
+      );
+    }
+    if (o.snow !== undefined) {
+      shader.uniforms.uSnow = weatherFx.snow;
+      shader.uniforms.uWet = weatherFx.wet;
+      shader.uniforms.uTint = weatherFx.tint;
+      vs = vs
+        .replace('void main() {', `varying float vUp;${o.mask ? ' attribute float aSnow; varying float vMask;' : ''}\nvoid main() {`)
+        .replace(
+          '#include <beginnormal_vertex>',
+          `#include <beginnormal_vertex>
+          vec3 wn = objectNormal;
+          #ifdef USE_INSTANCING
+          wn = mat3(instanceMatrix) * wn;
+          #endif
+          vUp = normalize(mat3(modelMatrix) * wn).y;${o.mask ? ' vMask = aSnow;' : ''}`,
+        );
+      fs = fs.replace('void main() {', `uniform float uSnow; uniform float uWet; uniform vec3 uTint; varying float vUp;${o.mask ? ' varying float vMask;' : ''}\nvoid main() {`).replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        ${o.tint ? 'diffuseColor.rgb *= uTint;' : ''}
+        diffuseColor.rgb *= 1.0 - uWet * 0.3;
+        float sn = clamp((uSnow * 1.3 - (1.0 - vUp) * 2.2${o.mask ? ' - (1.0 - vMask) * 1.2' : ''}) * 2.5, 0.0, 1.0) * ${o.snow.toFixed(2)};
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.89, 0.95), sn);`,
+      );
+    }
+    shader.vertexShader = vs;
+    shader.fragmentShader = fs;
+  };
+  mat.customProgramCacheKey = () => `patch-${JSON.stringify(o)}`;
+}
+
+/**
+ * Brushwork on the ground: two scales of stretched noise vary the paint, so earth and grass
+ * read as dabs and strokes rather than a flat fill. World-space, so it never swims.
+ */
+export function paintedGround(mat: THREE.Material): void {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('void main() {', 'varying vec3 vGW;\nvoid main() {')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace(
+        'void main() {',
+        `varying vec3 vGW;
+        float gh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float gn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(gh(i), gh(i + vec2(1.0, 0.0)), f.x), mix(gh(i + vec2(0.0, 1.0)), gh(i + vec2(1.0, 1.0)), f.x), f.y); }
+        void main() {`,
+      )
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          vec2 q = vGW.xz;
+          // Strokes: stretched along a slowly turning direction, like a dry brush.
+          float a = gn(q * 0.05) * 6.28;
+          vec2 dir = vec2(cos(a), sin(a));
+          vec2 sp = vec2(dot(q, dir), dot(q, vec2(-dir.y, dir.x)));
+          float stroke = gn(sp * vec2(0.6, 2.6));
+          float dab = gn(q * 1.7 + 13.0);
+          float big = gn(q * 0.18 + 5.0);
+          diffuseColor.rgb *= 0.86 + stroke * 0.2 + dab * 0.08;
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.04, 0.9), smoothstep(0.55, 0.85, big) * 0.6);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.9, 0.97, 1.05), smoothstep(0.45, 0.15, big) * 0.5);
+          // The camp clearing up close (art direction revision 4): trodden earth with grit and
+          // pebbles, soot and pale ash round the hearth, and the meadow creeping in at the edge.
+          float campD = length(vGW.xz);
+          float campK = 1.0 - smoothstep(2.8, 4.6, campD);
+          if (campK > 0.001) {
+            float g1 = gn(q * 13.0);
+            float g2 = gn(q * 29.0 + 7.0);
+            float grit = g1 * 0.6 + g2 * 0.4;
+            diffuseColor.rgb *= mix(1.0, 0.8 + grit * 0.34, campK);
+            // Small stones, lit on top: sparse, with a darker rim.
+            float pv = gn(q * 8.0 + 3.0);
+            float peb = smoothstep(0.8, 0.86, pv) * campK;
+            float rimP = smoothstep(0.74, 0.8, pv) * (1.0 - smoothstep(0.8, 0.86, pv)) * campK;
+            diffuseColor.rgb *= 1.0 - rimP * 0.35;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.57, 0.52) * (0.85 + g2 * 0.3), peb * 0.6);
+            // Soot and ash round the hearth, ragged at the edge.
+            float ragged = campD + (gn(q * 3.1) - 0.5) * 0.5;
+            float soot = 1.0 - smoothstep(0.7, 1.45, ragged);
+            vec3 ashC = mix(vec3(0.13, 0.115, 0.105), vec3(0.46, 0.44, 0.41), smoothstep(0.35, 0.8, gn(q * 5.5 + 2.0)));
+            diffuseColor.rgb = mix(diffuseColor.rgb, ashC, soot * 0.75);
+            // Worn darker where feet go round the fire.
+            float ring = smoothstep(1.2, 1.7, campD) * (1.0 - smoothstep(2.0, 2.7, campD));
+            diffuseColor.rgb *= 1.0 - ring * 0.14 * (0.6 + g1 * 0.4);
+            // The meadow creeping back in: green dabs toward the edge of the clearing.
+            float edge = smoothstep(1.9, 3.6, campD) * campK;
+            float moss = smoothstep(0.45, 0.72, gn(q * 2.3 + 9.0)) * edge;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.4, 0.18) * (0.85 + g1 * 0.3), moss * 0.7);
+          }
+        }`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+        {
+          // Relief you can see under a low sun: grit and pebbles tilt the normal near camp, and
+          // a broader ripple everywhere. Gradient of the same noise, by finite difference.
+          vec2 q = vGW.xz;
+          float campK = 1.0 - smoothstep(2.8, 4.6, length(q));
+          float e = 0.02;
+          #define GH(p) (gn((p) * 13.0) * 0.6 + gn((p) * 29.0 + 7.0) * 0.4 + smoothstep(0.74, 0.86, gn((p) * 8.0 + 3.0)) * 1.4)
+          float h0 = GH(q);
+          float gx = (GH(q + vec2(e, 0.0)) - h0) / e;
+          float gz = (GH(q + vec2(0.0, e)) - h0) / e;
+          float k = 0.0035 * campK + 0.0006;
+          normal = normalize(normal - (viewMatrix * vec4(gx * k, 0.0, gz * k, 0.0)).xyz);
+          #undef GH
+        }`,
+      );
+  };
+  const key = mat.customProgramCacheKey.bind(mat);
+  mat.customProgramCacheKey = () => key() + '-painted-v2';
+}
+
+/** Bend a material's vertices with the shared wind, by height above `base` squared times `k`. */
+export function swayInWind(mat: THREE.Material, base: number, k: number, snow?: number): void {
+  patchMaterial(mat, snow === undefined ? { sway: [base, k] } : { sway: [base, k], snow });
+}
+
+export interface World {
+  group: THREE.Group;
+  /** The sky shader's sun and moon. */
+  skySun: { dir: THREE.Vector3; color: THREE.Color; disc: { value: number }; moonDir: THREE.Vector3; moonI: { value: number }; moonLit: { value: number }; rays: { value: number } };
+  summitLight: THREE.Sprite;
+  /** The sky dome's colours, for time of day. */
+  sky: { zenith: THREE.Color; mid: THREE.Color; horizon: THREE.Color };
+  stars: THREE.Points;
+  starU: { opacity: { value: number }; time: { value: number }; pr: { value: number } };
+  update(t: number): void;
+}
+
+export function buildWorld(scene: THREE.Scene, opts: { nearForest?: number; noTrees?: boolean } = {}): World {
+  const group = new THREE.Group();
+  const skyGroup = buildSky();
+  group.add(skyGroup);
+  const skyMat = (skyGroup.children[0] as THREE.Mesh).material as THREE.ShaderMaterial;
+  const stars = skyGroup.children[1] as THREE.Points;
+  group.add(buildTerrain());
+  if (!opts.noTrees) group.add(buildTrees(opts.nearForest ?? 11));
+  group.add(buildRocks());
+  const { group: mountains, summit } = buildMountains();
+  group.add(mountains);
+  group.add(buildMidlands());
+
+  // The Ninth Hut's light: a small lamp near the summit that signals the weather every dusk.
+  const summitLight = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: glowTexture(), color: '#7dffb0', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
+  );
+  summitLight.position.copy(summit);
+  summitLight.scale.setScalar(26);
+  group.add(summitLight);
+
+  scene.add(group);
+  return {
+    group,
+    summitLight,
+    sky: { zenith: skyMat.uniforms.zenith!.value as THREE.Color, mid: skyMat.uniforms.mid!.value as THREE.Color, horizon: skyMat.uniforms.horizon!.value as THREE.Color },
+    stars,
+    starU: (stars.material as THREE.ShaderMaterial).uniforms as World['starU'],
+    skySun: {
+      dir: skyMat.uniforms.sunDir!.value as THREE.Vector3,
+      color: skyMat.uniforms.sunColor!.value as THREE.Color,
+      disc: skyMat.uniforms.sunDisc as { value: number },
+      moonDir: skyMat.uniforms.moonDir!.value as THREE.Vector3,
+      moonI: skyMat.uniforms.moonI as { value: number },
+      moonLit: skyMat.uniforms.moonLit as { value: number },
+      rays: skyMat.uniforms.rays as { value: number },
+    },
+    update(t: number) {
+      // Two slow green flashes every 7 seconds, then a faint steady glow.
+      const cycle = t % 7;
+      const flash = (s: number): number => Math.exp(-Math.pow((cycle - s) / 0.25, 2));
+      const k = Math.max(flash(1.0), flash(1.9));
+      const mat = summitLight.material;
+      mat.opacity = 0.5 + k * 0.5;
+      summitLight.scale.setScalar(24 + k * 40);
+    },
+  };
+}

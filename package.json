@@ -1,0 +1,34 @@
+{
+  "name": "ascent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Ascent: a habit tracker through which you live a year-long story on a mountain route.",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "tsc --noEmit && vite build",
+    "artifact": "npm run build && node tools/artifactize.mjs",
+    "check": "npm run typecheck && npm run test && npm run artifact",
+    "build:feel3d": "tsc --noEmit && vite build --config vite.feel3d.config.ts && node tools/artifactize.mjs dist/feel-3d/prototypes/feel-3d.html dist/feel-3d/ascent-feel-3d.html",
+    "build:silhouette": "tsc --noEmit && vite build --config vite.silhouette.config.ts && node tools/artifactize.mjs dist/feel-silhouette/prototypes/feel-silhouette.html dist/feel-silhouette/ascent-feel-silhouette.html",
+    "build:syncprobe": "tsc --noEmit && vite build --config vite.syncprobe.config.ts && node tools/artifactize.mjs dist/sync-probe/prototypes/sync-probe.html dist/sync-probe/ascent-sync-probe.html",
+    "test:e2e": "vite build && node tests/e2e/app.e2e.mjs",
+    "play": "vite build && node -e \"require('fs').copyFileSync('dist/index.html','Play Ascent.html')\""
+  },
+  "devDependencies": {
+    "@types/three": "0.169.0",
+    "fast-check": "^3.23.1",
+    "playwright-core": "^1.56.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.0.3",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "three": "0.169.0",
+    "zod": "3.23.8"
+  }
+}
